@@ -1,0 +1,137 @@
+repos:
+  # Общие хуки
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-docstring-first
+      - id: check-json
+      - id: pretty-format-json
+        args: ['--autofix']
+
+  # Python форматирование
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+      - id: black
+        language_version: python3
+        args: ['--line-length=120']
+
+  # Сортировка импортов
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ['--profile=black', '--line-length=120']
+
+  # Линтинг Python
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        args: [
+          '--max-line-length=120',
+          '--ignore=E203,W503,E501',
+          '--exclude=migrations,__pycache__,.venv,venv'
+        ]
+
+  # Pylint для обнаружения дублирования
+  - repo: local
+    hooks:
+      - id: pylint-similarities
+        name: PyLint Similarity Check
+        entry: pylint
+        language: system
+        args: [
+          '--disable=all',
+          '--enable=duplicate-code'
+        ]
+        files: \.py$
+        exclude: ^(tests/|migrations/|__pycache__/)
+
+  # Проверка типов с mypy (запускается отдельно через make typecheck)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.13.0
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: [
+  #         pydantic,
+  #         sqlalchemy,
+  #         types-redis,
+  #         types-pytz,
+  #         types-passlib,
+  #         types-setuptools,
+  #       ]
+  #       args: ['--config-file=pyproject.toml', '--explicit-package-bases']
+  #       exclude: ^(migrations/versions/|migrations/env\.py|src/core/migrations/__init__\.py|var/|backups/|htmlcov/)
+
+  # Проверка безопасности
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-r', 'src/', '-f', 'json']
+        exclude: ^tests/
+
+  # Проверка дублирования кода (наш скрипт)
+  - repo: local
+    hooks:
+      - id: check-code-duplication
+        name: Check Code Duplication
+        entry: python scripts/check_duplication.py
+        language: system
+        args: ['--min-lines=7']
+        pass_filenames: false
+        always_run: true
+
+  # Проверка архитектурных правил
+  - repo: local
+    hooks:
+      - id: architecture-check
+        name: Architecture Check
+        entry: python scripts/check_architecture.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Проверка документации
+  - repo: local
+    hooks:
+      - id: docs-check
+        name: Documentation Check
+        entry: bash
+        language: system
+        args: ['-c', 'find src/ -name "*.py" -path "*/src/*" ! -path "*/tests/*" ! -name "__init__.py" -exec grep -L "\"\"\"" {} \; | head -10']
+        pass_filenames: false
+
+  # Очистка проекта от мусора
+  - repo: local
+    hooks:
+      - id: cleanup-project
+        name: Project Cleanup
+        entry: python scripts/cleanup_project.py
+        language: system
+        args: ['--dry-run']
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+ci:
+  autofix_commit_msg: "[pre-commit.ci] auto fixes from pre-commit.com hooks"
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [pytest-fast, check-project-structure]
+  submodules: false
+
+default_stages: [pre-commit]
+fail_fast: false
+default_language_version:
+  python: python3

@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Тест с Бинарными Данными и WebRTC</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+      }
+      .container {
+        background: white;
+        border-radius: 15px;
+        padding: 30px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #ecf0f1;
+      }
+      .tab {
+        padding: 10px 20px;
+        background: #ecf0f1;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px 5px 0 0;
+        margin-right: 5px;
+        transition: all 0.3s ease;
+      }
+      .tab.active {
+        background: #3498db;
+        color: white;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .connection-status {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        text-align: center;
+        font-weight: bold;
+        transition: all 0.3s ease;
+      }
+      .status-disconnected {
+        background: #e74c3c;
+        color: white;
+      }
+      .status-connecting {
+        background: #f39c12;
+        color: white;
+      }
+      .status-connected {
+        background: #27ae60;
+        color: white;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 600;
+        color: #2c3e50;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+      }
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: #3498db;
+      }
+      button {
+        background: linear-gradient(45deg, #3498db, #2980b9);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        margin-right: 10px;
+        margin-bottom: 10px;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+      }
+      button:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+      .messages {
+        height: 300px;
+        overflow-y: auto;
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        padding: 15px;
+        background: #f8f9fa;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+      }
+      .message {
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        border-radius: 5px;
+        word-wrap: break-word;
+      }
+      .message-sent {
+        background: #d5f4e6;
+        border-left: 4px solid #27ae60;
+      }
+      .message-received {
+        background: #fdeaa7;
+        border-left: 4px solid #f39c12;
+      }
+      .message-error {
+        background: #fab1a0;
+        border-left: 4px solid #e74c3c;
+      }
+      .message-binary {
+        background: #dda0dd;
+        border-left: 4px solid #9932cc;
+      }
+      .binary-upload {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .file-info {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+      }
+      .webrtc-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      video {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+      }
+      .video-label {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .webrtc-info {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        font-size: 12px;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .stat-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #3498db;
+      }
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      .stat-label {
+        color: #7f8c8d;
+        font-size: 12px;
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🚀 WebSocket Тест с Бинарными Данными и WebRTC</h1>
+
+      <div class="connection-status" id="connectionStatus">
+        <span id="statusText">Отключено</span>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('basic')">Основное</button>
+        <button class="tab" onclick="showTab('binary')">Бинарные данные</button>
+        <button class="tab" onclick="showTab('webrtc')">WebRTC</button>
+        <button class="tab" onclick="showTab('stats')">Статистика</button>
+      </div>
+
+      <!-- Основная вкладка -->
+      <div id="basic" class="tab-content active">
+        <div class="form-group">
+          <label for="wsUrl">WebSocket URL:</label>
+          <input
+            type="text"
+            id="wsUrl"
+            value="ws://localhost:8000/realtime/ws"
+            placeholder="ws://localhost:8000/realtime/ws"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="authToken">Токен авторизации (опционально):</label>
+          <input
+            type="text"
+            id="authToken"
+            placeholder="Bearer token или API key"
+          />
+        </div>
+
+        <button onclick="connect()" id="connectBtn">Подключиться</button>
+        <button onclick="disconnect()" id="disconnectBtn" disabled>
+          Отключиться
+        </button>
+
+        <div class="form-group">
+          <label for="messageText">Сообщение:</label>
+          <textarea
+            id="messageText"
+            rows="3"
+            placeholder="Введите сообщение..."
+          ></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="channel">Канал (опционально):</label>
+          <input type="text" id="channel" placeholder="general" />
+        </div>
+
+        <button onclick="sendMessage()" id="sendBtn" disabled>
+          Отправить сообщение
+        </button>
+        <button onclick="ping()" id="pingBtn" disabled>Ping</button>
+        <button onclick="subscribeToChannel()" id="subscribeBtn" disabled>
+          Подписаться на канал
+        </button>
+      </div>
+
+      <!-- Вкладка бинарных данных -->
+      <div id="binary" class="tab-content">
+        <div class="form-group">
+          <label for="fileInput">Выберите файл:</label>
+          <div class="binary-upload">
+            <input
+              type="file"
+              id="fileInput"
+              onchange="handleFileSelect(event)"
+            />
+            <button onclick="sendBinaryFile()" id="sendFileBtn" disabled>
+              Отправить файл
+            </button>
+          </div>
+          <div class="file-info" id="fileInfo"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="binaryText"
+            >Или введите текст для отправки как бинарные данные:</label
+          >
+          <textarea
+            id="binaryText"
+            rows="3"
+            placeholder="Этот текст будет преобразован в бинарные данные"
+          ></textarea>
+          <button onclick="sendBinaryText()" id="sendBinaryBtn" disabled>
+            Отправить как Binary
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label>Генерация тестовых данных:</label>
+          <button onclick="generateRandomBinary()" id="generateBtn" disabled>
+            Генерировать случайные данные
+          </button>
+          <button onclick="generateImage()" id="generateImageBtn" disabled>
+            Генерировать тестовое изображение
+          </button>
+        </div>
+      </div>
+
+      <!-- Вкладка WebRTC -->
+      <div id="webrtc" class="tab-content">
+        <div class="form-group">
+          <label for="peerId">ID пира для подключения:</label>
+          <input type="text" id="peerId" placeholder="peer_123" />
+          <button onclick="createOffer()" id="createOfferBtn" disabled>
+            Создать предложение
+          </button>
+          <button onclick="createAnswer()" id="createAnswerBtn" disabled>
+            Создать ответ
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label for="roomId">ID комнаты:</label>
+          <input
+            type="text"
+            id="roomId"
+            placeholder="room_abc"
+            value="room_123"
+          />
+          <button onclick="joinRoom()" id="joinRoomBtn" disabled>
+            Войти в комнату
+          </button>
+          <button onclick="leaveRoom()" id="leaveRoomBtn" disabled>
+            Покинуть комнату
+          </button>
+        </div>
+
+        <div class="webrtc-controls">
+          <div class="video-container">
+            <video id="localVideo" autoplay muted></video>
+            <div class="video-label">Локальное видео</div>
+          </div>
+          <div class="video-container">
+            <video id="remoteVideo" autoplay></video>
+            <div class="video-label">Удаленное видео</div>
+          </div>
+        </div>
+
+        <button onclick="startLocalVideo()" id="startVideoBtn">
+          Запустить камеру
+        </button>
+        <button onclick="stopLocalVideo()" id="stopVideoBtn" disabled>
+          Остановить камеру
+        </button>
+        <button onclick="toggleAudio()" id="toggleAudioBtn" disabled>
+          Вкл/Выкл микрофон
+        </button>
+        <button onclick="toggleVideo()" id="toggleVideoBtn" disabled>
+          Вкл/Выкл видео
+        </button>
+
+        <div class="webrtc-info" id="webrtcInfo">
+          WebRTC статус: Не подключено
+        </div>
+      </div>
+
+      <!-- Вкладка статистики -->
+      <div id="stats" class="tab-content">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="messagesSent">0</div>
+            <div class="stat-label">Сообщений отправлено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="messagesReceived">0</div>
+            <div class="stat-label">Сообщений получено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="binaryDataSent">0 KB</div>
+            <div class="stat-label">Бинарных данных отправлено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="connectionTime">0s</div>
+            <div class="stat-label">Время подключения</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="connectionId">-</div>
+            <div class="stat-label">ID подключения</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="webrtcPeers">0</div>
+            <div class="stat-label">WebRTC подключений</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="messages">Лог сообщений:</label>
+        <div class="messages" id="messages"></div>
+        <button onclick="clearMessages()">Очистить лог</button>
+      </div>
+    </div>
+
+    <script>
+      let ws = null;
+      let connectionStartTime = null;
+      let stats = {
+        messagesSent: 0,
+        messagesReceived: 0,
+        binaryDataSent: 0,
+      };
+      let localStream = null;
+      let peerConnection = null;
+      let dataChannel = null;
+      let currentPeerId = null;
+
+      // WebRTC конфигурация
+      const rtcConfiguration = {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      };
+
+      function showTab(tabName) {
+        // Скрыть все вкладки
+        document.querySelectorAll(".tab-content").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        // Показать выбранную вкладку
+        document.getElementById(tabName).classList.add("active");
+        event.target.classList.add("active");
+      }
+
+      function updateConnectionStatus(status, text) {
+        const statusElement = document.getElementById("connectionStatus");
+        const statusText = document.getElementById("statusText");
+
+        statusElement.className = "connection-status status-" + status;
+        statusText.textContent = text;
+      }
+
+      function updateStats() {
+        document.getElementById("messagesSent").textContent =
+          stats.messagesSent;
+        document.getElementById("messagesReceived").textContent =
+          stats.messagesReceived;
+        document.getElementById("binaryDataSent").textContent =
+          (stats.binaryDataSent / 1024).toFixed(2) + " KB";
+
+        if (connectionStartTime) {
+          const uptime = Math.floor((Date.now() - connectionStartTime) / 1000);
+          document.getElementById("connectionTime").textContent = uptime + "s";
+        }
+      }
+
+      function addMessage(message, type = "received") {
+        const messagesDiv = document.getElementById("messages");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message message-${type}`;
+
+        const timestamp = new Date().toLocaleTimeString();
+        messageDiv.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        if (type === "received") {
+          stats.messagesReceived++;
+          updateStats();
+        }
+      }
+
+      function connect() {
+        const url = document.getElementById("wsUrl").value;
+        const token = document.getElementById("authToken").value;
+
+        let wsUrl = url;
+        if (token) {
+          wsUrl += `?token=${encodeURIComponent(token)}`;
+        }
+
+        try {
+          updateConnectionStatus("connecting", "Подключение...");
+          ws = new WebSocket(wsUrl);
+
+          ws.onopen = function (event) {
+            updateConnectionStatus("connected", "Подключено");
+            connectionStartTime = Date.now();
+
+            document.getElementById("connectBtn").disabled = true;
+            document.getElementById("disconnectBtn").disabled = false;
+            document.getElementById("sendBtn").disabled = false;
+            document.getElementById("pingBtn").disabled = false;
+            document.getElementById("subscribeBtn").disabled = false;
+            document.getElementById("sendFileBtn").disabled = false;
+            document.getElementById("sendBinaryBtn").disabled = false;
+            document.getElementById("generateBtn").disabled = false;
+            document.getElementById("generateImageBtn").disabled = false;
+            document.getElementById("createOfferBtn").disabled = false;
+            document.getElementById("joinRoomBtn").disabled = false;
+
+            addMessage("WebSocket подключение установлено", "sent");
+
+            // Генерируем уникальный ID для этого клиента
+            currentPeerId = "peer_" + Math.random().toString(36).substr(2, 9);
+            document.getElementById("connectionId").textContent = currentPeerId;
+          };
+
+          ws.onmessage = function (event) {
+            let message;
+
+            if (event.data instanceof Blob) {
+              // Обработка бинарных данных
+              const reader = new FileReader();
+              reader.onload = function (e) {
+                const binaryData = new Uint8Array(e.target.result);
+                addMessage(
+                  `Получены бинарные данные: ${binaryData.length} байт`,
+                  "binary"
+                );
+              };
+              reader.readAsArrayBuffer(event.data);
+              return;
+            }
+
+            try {
+              message = JSON.parse(event.data);
+            } catch (e) {
+              message = event.data;
+            }
+
+            if (typeof message === "object" && message.type === "webrtc") {
+              handleWebRTCMessage(message);
+            } else if (typeof message === "object" && message.binary_data) {
+              // Обработка base64 бинарных данных
+              const binarySize = atob(message.binary_data).length;
+              addMessage(
+                `Получены бинарные данные (base64): ${binarySize} байт, тип: ${message.type}`,
+                "binary"
+              );
+            } else {
+              addMessage(
+                `Получено: ${JSON.stringify(message, null, 2)}`,
+                "received"
+              );
+            }
+          };
+
+          ws.onclose = function (event) {
+            updateConnectionStatus("disconnected", "Отключено");
+
+            document.getElementById("connectBtn").disabled = false;
+            document.getElementById("disconnectBtn").disabled = true;
+            document.getElementById("sendBtn").disabled = true;
+            document.getElementById("pingBtn").disabled = true;
+            document.getElementById("subscribeBtn").disabled = true;
+            document.getElementById("sendFileBtn").disabled = true;
+            document.getElementById("sendBinaryBtn").disabled = true;
+            document.getElementById("generateBtn").disabled = true;
+            document.getElementById("generateImageBtn").disabled = true;
+            document.getElementById("createOfferBtn").disabled = true;
+            document.getElementById("joinRoomBtn").disabled = true;
+
+            addMessage(
+              `WebSocket закрыт. Код: ${event.code}, Причина: ${event.reason}`,
+              "error"
+            );
+            connectionStartTime = null;
+          };
+
+          ws.onerror = function (error) {
+            updateConnectionStatus("disconnected", "Ошибка подключения");
+            addMessage(`Ошибка WebSocket: ${error}`, "error");
+          };
+        } catch (error) {
+          updateConnectionStatus("disconnected", "Ошибка");
+          addMessage(`Ошибка подключения: ${error.message}`, "error");
+        }
+      }
+
+      function disconnect() {
+        if (ws) {
+          ws.close();
+          ws = null;
+        }
+
+        // Остановить WebRTC
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+          localStream = null;
+        }
+      }
+
+      function sendMessage() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const text = document.getElementById("messageText").value;
+        const channel = document.getElementById("channel").value;
+
+        const message = {
+          action: "send_message",
+          data: {
+            text: text,
+            channel: channel || null,
+          },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(`Отправлено: ${JSON.stringify(message)}`, "sent");
+
+        stats.messagesSent++;
+        updateStats();
+
+        document.getElementById("messageText").value = "";
+      }
+
+      function ping() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const message = { action: "ping" };
+        ws.send(JSON.stringify(message));
+        addMessage("Ping отправлен", "sent");
+
+        stats.messagesSent++;
+        updateStats();
+      }
+
+      function subscribeToChannel() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const channel = document.getElementById("channel").value;
+        if (!channel) {
+          addMessage("Укажите канал для подписки", "error");
+          return;
+        }
+
+        const message = {
+          action: "subscribe",
+          data: { channel: channel },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(`Подписка на канал: ${channel}`, "sent");
+
+        stats.messagesSent++;
+        updateStats();
+      }
+
+      // Бинарные данные
+      function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+          const fileInfo = document.getElementById("fileInfo");
+          fileInfo.innerHTML = `
+                    <strong>Файл:</strong> ${file.name}<br>
+                    <strong>Размер:</strong> ${(file.size / 1024).toFixed(
+                      2
+                    )} KB<br>
+                    <strong>Тип:</strong> ${file.type || "неизвестно"}
+                `;
+        }
+      }
+
+      function sendBinaryFile() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          addMessage("Выберите файл для отправки", "error");
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const arrayBuffer = e.target.result;
+          const base64Data = btoa(
+            String.fromCharCode(...new Uint8Array(arrayBuffer))
+          );
+
+          const message = {
+            action: "send_binary",
+            binary_data: base64Data,
+            data: {
+              filename: file.name,
+              content_type: file.type || "application/octet-stream",
+              size: file.size,
+            },
+          };
+
+          ws.send(JSON.stringify(message));
+          addMessage(
+            `Отправлен файл: ${file.name} (${(file.size / 1024).toFixed(
+              2
+            )} KB)`,
+            "sent"
+          );
+
+          stats.messagesSent++;
+          stats.binaryDataSent += file.size;
+          updateStats();
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function sendBinaryText() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const text = document.getElementById("binaryText").value;
+        if (!text) {
+          addMessage("Введите текст для отправки", "error");
+          return;
+        }
+
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text);
+        const base64Data = btoa(String.fromCharCode(...data));
+
+        const message = {
+          action: "send_binary",
+          binary_data: base64Data,
+          data: {
+            content_type: "text/plain",
+            size: data.length,
+          },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(
+          `Отправлен текст как бинарные данные: ${data.length} байт`,
+          "sent"
+        );
+
+        stats.messagesSent++;
+        stats.binaryDataSent += data.length;
+        updateStats();
+
+        document.getElementById("binaryText").value = "";
+      }
+
+      function generateRandomBinary() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        // Генерируем случайные данные (1KB)
+        const size = 1024;
+        const data = new Uint8Array(size);
+        for (let i = 0; i < size; i++) {
+          data[i] = Math.floor(Math.random() * 256);
+        }
+
+        const base64Data = btoa(String.fromCharCode(...data));
+
+        const message = {
+          action: "send_binary",
+          binary_data: base64Data,
+          data: {
+            content_type: "application/octet-stream",
+            size: size,
+            description: "Случайные тестовые данные",
+          },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(`Отправлены случайные данные: ${size} байт`, "sent");
+
+        stats.messagesSent++;
+        stats.binaryDataSent += size;
+        updateStats();
+      }
+
+      function generateImage() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        // Создаем простое изображение в canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 200;
+        canvas.height = 200;
+        const ctx = canvas.getContext("2d");
+
+        // Рисуем градиент
+        const gradient = ctx.createLinearGradient(0, 0, 200, 200);
+        gradient.addColorStop(0, "#3498db");
+        gradient.addColorStop(1, "#9b59b6");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 200, 200);
+
+        // Добавляем текст
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Test Image", 100, 100);
+        ctx.fillText(new Date().toLocaleTimeString(), 100, 130);
+
+        // Конвертируем в blob и отправляем
+        canvas.toBlob(function (blob) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const arrayBuffer = e.target.result;
+            const base64Data = btoa(
+              String.fromCharCode(...new Uint8Array(arrayBuffer))
+            );
+
+            const message = {
+              action: "send_binary",
+              binary_data: base64Data,
+              data: {
+                filename: "test_image.png",
+                content_type: "image/png",
+                size: arrayBuffer.byteLength,
+              },
+            };
+
+            ws.send(JSON.stringify(message));
+            addMessage(
+              `Отправлено тестовое изображение: ${(
+                arrayBuffer.byteLength / 1024
+              ).toFixed(2)} KB`,
+              "sent"
+            );
+
+            stats.messagesSent++;
+            stats.binaryDataSent += arrayBuffer.byteLength;
+            updateStats();
+          };
+          reader.readAsArrayBuffer(blob);
+        }, "image/png");
+      }
+
+      // WebRTC функции
+      function startLocalVideo() {
+        navigator.mediaDevices
+          .getUserMedia({ video: true, audio: true })
+          .then((stream) => {
+            localStream = stream;
+            document.getElementById("localVideo").srcObject = stream;
+
+            document.getElementById("startVideoBtn").disabled = true;
+            document.getElementById("stopVideoBtn").disabled = false;
+            document.getElementById("toggleAudioBtn").disabled = false;
+            document.getElementById("toggleVideoBtn").disabled = false;
+
+            addMessage("Локальная камера запущена", "sent");
+            updateWebRTCInfo();
+          })
+          .catch((error) => {
+            addMessage(`Ошибка доступа к камере: ${error.message}`, "error");
+          });
+      }
+
+      function stopLocalVideo() {
+        if (localStream) {
+          localStream.getTracks().forEach((track) => track.stop());
+          localStream = null;
+          document.getElementById("localVideo").srcObject = null;
+
+          document.getElementById("startVideoBtn").disabled = false;
+          document.getElementById("stopVideoBtn").disabled = true;
+          document.getElementById("toggleAudioBtn").disabled = true;
+          document.getElementById("toggleVideoBtn").disabled = true;
+
+          addMessage("Локальная камера остановлена", "sent");
+          updateWebRTCInfo();
+        }
+      }
+
+      function toggleAudio() {
+        if (localStream) {
+          const audioTrack = localStream.getAudioTracks()[0];
+          if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            addMessage(
+              `Микрофон ${audioTrack.enabled ? "включен" : "выключен"}`,
+              "sent"
+            );
+          }
+        }
+      }
+
+      function toggleVideo() {
+        if (localStream) {
+          const videoTrack = localStream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.enabled = !videoTrack.enabled;
+            addMessage(
+              `Видео ${videoTrack.enabled ? "включено" : "выключено"}`,
+              "sent"
+            );
+          }
+        }
+      }
+
+      function createOffer() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const targetPeerId = document.getElementById("peerId").value;
+        if (!targetPeerId) {
+          addMessage("Укажите ID пира для подключения", "error");
+          return;
+        }
+
+        setupPeerConnection(targetPeerId);
+
+        peerConnection
+          .createOffer()
+          .then((offer) => {
+            return peerConnection.setLocalDescription(offer);
+          })
+          .then(() => {
+            const message = {
+              action: "webrtc_signal",
+              data: {
+                signal_type: "offer",
+                peer_id: currentPeerId,
+                target_peer_id: targetPeerId,
+                sdp: peerConnection.localDescription.sdp,
+                room_id: document.getElementById("roomId").value || null,
+              },
+            };
+
+            ws.send(JSON.stringify(message));
+            addMessage(
+              `WebRTC предложение отправлено для ${targetPeerId}`,
+              "sent"
+            );
+
+            stats.messagesSent++;
+            updateStats();
+          })
+          .catch((error) => {
+            addMessage(
+              `Ошибка создания предложения: ${error.message}`,
+              "error"
+            );
+          });
+      }
+
+      function createAnswer() {
+        if (!peerConnection) {
+          addMessage("Нет активного WebRTC соединения для ответа", "error");
+          return;
+        }
+
+        peerConnection
+          .createAnswer()
+          .then((answer) => {
+            return peerConnection.setLocalDescription(answer);
+          })
+          .then(() => {
+            const message = {
+              action: "webrtc_signal",
+              data: {
+                signal_type: "answer",
+                peer_id: currentPeerId,
+                target_peer_id: document.getElementById("peerId").value,
+                sdp: peerConnection.localDescription.sdp,
+                room_id: document.getElementById("roomId").value || null,
+              },
+            };
+
+            ws.send(JSON.stringify(message));
+            addMessage("WebRTC ответ отправлен", "sent");
+
+            stats.messagesSent++;
+            updateStats();
+          })
+          .catch((error) => {
+            addMessage(`Ошибка создания ответа: ${error.message}`, "error");
+          });
+      }
+
+      function joinRoom() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const roomId = document.getElementById("roomId").value;
+        if (!roomId) {
+          addMessage("Укажите ID комнаты", "error");
+          return;
+        }
+
+        const message = {
+          action: "webrtc_join_room",
+          data: {
+            room_id: roomId,
+            peer_id: currentPeerId,
+          },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(`Попытка войти в комнату: ${roomId}`, "sent");
+
+        document.getElementById("joinRoomBtn").disabled = true;
+        document.getElementById("leaveRoomBtn").disabled = false;
+
+        stats.messagesSent++;
+        updateStats();
+      }
+
+      function leaveRoom() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          addMessage("WebSocket не подключен", "error");
+          return;
+        }
+
+        const roomId = document.getElementById("roomId").value;
+
+        const message = {
+          action: "webrtc_leave_room",
+          data: {
+            room_id: roomId,
+            peer_id: currentPeerId,
+          },
+        };
+
+        ws.send(JSON.stringify(message));
+        addMessage(`Покидаем комнату: ${roomId}`, "sent");
+
+        document.getElementById("joinRoomBtn").disabled = false;
+        document.getElementById("leaveRoomBtn").disabled = true;
+
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+
+        stats.messagesSent++;
+        updateStats();
+      }
+
+      function setupPeerConnection(targetPeerId) {
+        peerConnection = new RTCPeerConnection(rtcConfiguration);
+
+        // Добавляем локальный стрим
+        if (localStream) {
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
+        }
+
+        // Создаем data channel
+        dataChannel = peerConnection.createDataChannel("messages");
+        dataChannel.onopen = function () {
+          addMessage("WebRTC data channel открыт", "sent");
+        };
+        dataChannel.onmessage = function (event) {
+          addMessage(`WebRTC сообщение: ${event.data}`, "received");
+        };
+
+        // Обработчики событий
+        peerConnection.onicecandidate = function (event) {
+          if (event.candidate) {
+            const message = {
+              action: "webrtc_signal",
+              data: {
+                signal_type: "ice-candidate",
+                peer_id: currentPeerId,
+                target_peer_id: targetPeerId,
+                ice_candidate: event.candidate,
+                room_id: document.getElementById("roomId").value || null,
+              },
+            };
+
+            ws.send(JSON.stringify(message));
+            addMessage("ICE candidate отправлен", "sent");
+          }
+        };
+
+        peerConnection.ontrack = function (event) {
+          document.getElementById("remoteVideo").srcObject = event.streams[0];
+          addMessage("Получен удаленный стрим", "received");
+        };
+
+        peerConnection.onconnectionstatechange = function () {
+          updateWebRTCInfo();
+          addMessage(
+            `WebRTC состояние: ${peerConnection.connectionState}`,
+            "received"
+          );
+        };
+
+        peerConnection.ondatachannel = function (event) {
+          const channel = event.channel;
+          channel.onmessage = function (event) {
+            addMessage(`WebRTC data: ${event.data}`, "received");
+          };
+        };
+      }
+
+      function handleWebRTCMessage(message) {
+        const data = message.data;
+
+        addMessage(
+          `WebRTC сигнал (${data.signal_type}) от ${data.peer_id}`,
+          "received"
+        );
+
+        if (data.signal_type === "offer") {
+          document.getElementById("peerId").value = data.peer_id;
+          setupPeerConnection(data.peer_id);
+
+          peerConnection
+            .setRemoteDescription(
+              new RTCSessionDescription({
+                type: "offer",
+                sdp: data.sdp,
+              })
+            )
+            .then(() => {
+              document.getElementById("createAnswerBtn").disabled = false;
+            });
+        } else if (data.signal_type === "answer") {
+          peerConnection.setRemoteDescription(
+            new RTCSessionDescription({
+              type: "answer",
+              sdp: data.sdp,
+            })
+          );
+        } else if (data.signal_type === "ice-candidate") {
+          peerConnection.addIceCandidate(
+            new RTCIceCandidate(data.ice_candidate)
+          );
+        }
+
+        updateWebRTCInfo();
+      }
+
+      function updateWebRTCInfo() {
+        const info = document.getElementById("webrtcInfo");
+        let infoText = "WebRTC статус: ";
+
+        if (peerConnection) {
+          infoText += `
+                    Соединение: ${peerConnection.connectionState}<br>
+                    ICE: ${peerConnection.iceConnectionState}<br>
+                    Сигналинг: ${peerConnection.signalingState}
+                `;
+        } else {
+          infoText += "Не подключено";
+        }
+
+        if (localStream) {
+          const videoTrack = localStream.getVideoTracks()[0];
+          const audioTrack = localStream.getAudioTracks()[0];
+          infoText += `<br>Локальное видео: ${
+            videoTrack ? (videoTrack.enabled ? "вкл" : "выкл") : "нет"
+          }`;
+          infoText += `<br>Локальное аудио: ${
+            audioTrack ? (audioTrack.enabled ? "вкл" : "выкл") : "нет"
+          }`;
+        }
+
+        info.innerHTML = infoText;
+
+        // Обновляем счетчик WebRTC подключений
+        document.getElementById("webrtcPeers").textContent = peerConnection
+          ? 1
+          : 0;
+      }
+
+      function clearMessages() {
+        document.getElementById("messages").innerHTML = "";
+      }
+
+      // Обновляем статистику каждую секунду
+      setInterval(updateStats, 1000);
+
+      // Инициализация
+      updateConnectionStatus("disconnected", "Отключено");
+      updateStats();
+    </script>
+  </body>
+</html>

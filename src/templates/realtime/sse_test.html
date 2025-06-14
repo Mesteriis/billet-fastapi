@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SSE Тест с Бинарными Данными</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        min-height: 100vh;
+      }
+      .container {
+        background: white;
+        border-radius: 15px;
+        padding: 30px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .connection-status {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        text-align: center;
+        font-weight: bold;
+        transition: all 0.3s ease;
+      }
+      .status-disconnected {
+        background: #e74c3c;
+        color: white;
+      }
+      .status-connecting {
+        background: #f39c12;
+        color: white;
+      }
+      .status-connected {
+        background: #27ae60;
+        color: white;
+      }
+      .form-group {
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 600;
+        color: #2c3e50;
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+      }
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: #e74c3c;
+      }
+      button {
+        background: linear-gradient(45deg, #e74c3c, #c0392b);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        margin-right: 10px;
+        margin-bottom: 10px;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+      }
+      button:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+      .messages {
+        height: 400px;
+        overflow-y: auto;
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        padding: 15px;
+        background: #f8f9fa;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+      }
+      .message {
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        border-radius: 5px;
+        word-wrap: break-word;
+      }
+      .message-info {
+        background: #d1ecf1;
+        border-left: 4px solid #bee5eb;
+      }
+      .message-event {
+        background: #d4edda;
+        border-left: 4px solid #c3e6cb;
+      }
+      .message-error {
+        background: #f8d7da;
+        border-left: 4px solid #f5c6cb;
+      }
+      .message-binary {
+        background: #dda0dd;
+        border-left: 4px solid #9932cc;
+      }
+      .tabs {
+        display: flex;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #ecf0f1;
+      }
+      .tab {
+        padding: 10px 20px;
+        background: #ecf0f1;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px 5px 0 0;
+        margin-right: 5px;
+        transition: all 0.3s ease;
+      }
+      .tab.active {
+        background: #e74c3c;
+        color: white;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .stat-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #e74c3c;
+      }
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      .stat-label {
+        color: #7f8c8d;
+        font-size: 12px;
+        margin-top: 5px;
+      }
+      .event-filter {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+      .event-filter label {
+        margin-bottom: 0;
+        white-space: nowrap;
+      }
+      .event-filter select {
+        width: auto;
+        min-width: 120px;
+      }
+      .binary-upload {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .file-info {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+      }
+      .notification-demo {
+        background: #f8f9fa;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+      }
+      .notification-demo h4 {
+        margin: 0 0 10px 0;
+        color: #495057;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📡 Server-Sent Events Тест с Бинарными Данными</h1>
+
+      <div class="connection-status" id="connectionStatus">
+        <span id="statusText">Отключено</span>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('basic')">Основное</button>
+        <button class="tab" onclick="showTab('binary')">Бинарные данные</button>
+        <button class="tab" onclick="showTab('notifications')">
+          Уведомления
+        </button>
+        <button class="tab" onclick="showTab('stats')">Статистика</button>
+      </div>
+
+      <!-- Основная вкладка -->
+      <div id="basic" class="tab-content active">
+        <div class="form-group">
+          <label for="sseUrl">SSE URL:</label>
+          <input
+            type="text"
+            id="sseUrl"
+            value="http://localhost:8000/realtime/events"
+            placeholder="http://localhost:8000/realtime/events"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="authToken">Токен авторизации (опционально):</label>
+          <input
+            type="text"
+            id="authToken"
+            placeholder="Bearer token или API key"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="channel">Канал для подписки:</label>
+          <input
+            type="text"
+            id="channel"
+            value="general"
+            placeholder="general"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="userId">User ID (для персональных событий):</label>
+          <input type="text" id="userId" placeholder="user_123" />
+        </div>
+
+        <button onclick="connect()" id="connectBtn">Подключиться</button>
+        <button onclick="disconnect()" id="disconnectBtn" disabled>
+          Отключиться
+        </button>
+        <button onclick="requestNotificationPermission()" id="notificationBtn">
+          Разрешить уведомления
+        </button>
+
+        <div class="event-filter">
+          <label for="eventTypeFilter">Фильтр типов событий:</label>
+          <select id="eventTypeFilter" onchange="updateEventFilter()">
+            <option value="all">Все события</option>
+            <option value="message">Сообщения</option>
+            <option value="notification">Уведомления</option>
+            <option value="binary">Бинарные данные</option>
+            <option value="system">Системные</option>
+          </select>
+
+          <label for="showTimestamps">
+            <input
+              type="checkbox"
+              id="showTimestamps"
+              checked
+              onchange="toggleTimestamps()"
+            />
+            Показывать время
+          </label>
+
+          <button onclick="clearMessages()">Очистить</button>
+        </div>
+      </div>
+
+      <!-- Вкладка бинарных данных -->
+      <div id="binary" class="tab-content">
+        <div class="form-group">
+          <label>Отправка файла через API (эмуляция получения):</label>
+          <div class="binary-upload">
+            <input
+              type="file"
+              id="fileInput"
+              onchange="handleFileSelect(event)"
+            />
+            <button onclick="uploadBinaryFile()" id="uploadFileBtn">
+              Загрузить файл
+            </button>
+          </div>
+          <div class="file-info" id="fileInfo"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="binaryText">Отправка текста как бинарные данные:</label>
+          <textarea
+            id="binaryText"
+            rows="3"
+            placeholder="Этот текст будет отправлен как бинарные данные через API"
+          ></textarea>
+          <button onclick="sendBinaryText()" id="sendBinaryBtn">
+            Отправить как Binary
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label>Тестовые бинарные данные:</label>
+          <button onclick="generateRandomBinary()">
+            Случайные данные (1KB)
+          </button>
+          <button onclick="generateTestImage()">Тестовое изображение</button>
+          <button onclick="generateJSONData()">JSON как binary</button>
+        </div>
+
+        <div class="notification-demo">
+          <h4>💡 Информация о бинарных данных в SSE</h4>
+          <p>
+            SSE поддерживает только текстовые данные, поэтому бинарные данные
+            передаются в формате Base64. Здесь вы можете тестировать загрузку и
+            отправку бинарных файлов через API, которые затем будут переданы
+            через SSE как события с Base64-кодированием.
+          </p>
+        </div>
+      </div>
+
+      <!-- Вкладка уведомлений -->
+      <div id="notifications" class="tab-content">
+        <div class="form-group">
+          <label for="notificationTitle">Заголовок уведомления:</label>
+          <input
+            type="text"
+            id="notificationTitle"
+            value="Тестовое уведомление"
+            placeholder="Заголовок"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="notificationBody">Текст уведомления:</label>
+          <textarea
+            id="notificationBody"
+            rows="3"
+            placeholder="Текст уведомления..."
+          >
+Это тестовое уведомление через SSE</textarea
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="notificationIcon">URL иконки:</label>
+          <input
+            type="text"
+            id="notificationIcon"
+            value="/static/notification-icon.png"
+            placeholder="URL иконки"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="notificationTag">Тег уведомления:</label>
+          <input
+            type="text"
+            id="notificationTag"
+            value="test"
+            placeholder="test"
+          />
+        </div>
+
+        <button onclick="sendTestNotification()">
+          Отправить уведомление через API
+        </button>
+        <button onclick="sendChannelNotification()">Отправить в канал</button>
+        <button onclick="sendBroadcastNotification()">Широковещательное</button>
+
+        <div class="notification-demo">
+          <h4>🔔 Демо браузерных уведомлений</h4>
+          <p>
+            Когда приходят уведомления через SSE, они автоматически отображаются
+            как браузерные уведомления (если разрешение получено).
+          </p>
+          <button onclick="showTestBrowserNotification()">
+            Показать тестовое браузерное уведомление
+          </button>
+        </div>
+      </div>
+
+      <!-- Вкладка статистики -->
+      <div id="stats" class="tab-content">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="eventsReceived">0</div>
+            <div class="stat-label">Событий получено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="binaryDataReceived">0 KB</div>
+            <div class="stat-label">Бинарных данных получено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="notificationsShown">0</div>
+            <div class="stat-label">Уведомлений показано</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="connectionTime">0s</div>
+            <div class="stat-label">Время подключения</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="lastEventTime">-</div>
+            <div class="stat-label">Последнее событие</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="connectionErrors">0</div>
+            <div class="stat-label">Ошибок подключения</div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 20px">
+          <label>Управление соединением:</label>
+          <button onclick="testReconnection()">Тест переподключения</button>
+          <button onclick="checkConnectionHealth()">
+            Проверить соединение
+          </button>
+          <button onclick="resetStats()">Сбросить статистику</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="messages">Лог событий:</label>
+        <div class="messages" id="messages"></div>
+      </div>
+    </div>
+
+    <script>
+      let eventSource = null;
+      let connectionStartTime = null;
+      let stats = {
+        eventsReceived: 0,
+        binaryDataReceived: 0,
+        notificationsShown: 0,
+        connectionErrors: 0,
+      };
+      let eventFilter = "all";
+      let showTimestamps = true;
+
+      function showTab(tabName) {
+        // Скрыть все вкладки
+        document.querySelectorAll(".tab-content").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        // Показать выбранную вкладку
+        document.getElementById(tabName).classList.add("active");
+        event.target.classList.add("active");
+      }
+
+      function updateConnectionStatus(status, text) {
+        const statusElement = document.getElementById("connectionStatus");
+        const statusText = document.getElementById("statusText");
+
+        statusElement.className = "connection-status status-" + status;
+        statusText.textContent = text;
+      }
+
+      function updateStats() {
+        document.getElementById("eventsReceived").textContent =
+          stats.eventsReceived;
+        document.getElementById("binaryDataReceived").textContent =
+          (stats.binaryDataReceived / 1024).toFixed(2) + " KB";
+        document.getElementById("notificationsShown").textContent =
+          stats.notificationsShown;
+        document.getElementById("connectionErrors").textContent =
+          stats.connectionErrors;
+
+        if (connectionStartTime) {
+          const uptime = Math.floor((Date.now() - connectionStartTime) / 1000);
+          document.getElementById("connectionTime").textContent = uptime + "s";
+        }
+
+        document.getElementById("lastEventTime").textContent =
+          stats.lastEventTime
+            ? new Date(stats.lastEventTime).toLocaleTimeString()
+            : "-";
+      }
+
+      function addMessage(message, type = "info", eventType = null) {
+        // Применяем фильтр
+        if (eventFilter !== "all" && eventType && eventType !== eventFilter) {
+          return;
+        }
+
+        const messagesDiv = document.getElementById("messages");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message message-${type}`;
+
+        let content = message;
+        if (showTimestamps) {
+          const timestamp = new Date().toLocaleTimeString();
+          content = `<strong>[${timestamp}]</strong> ${message}`;
+        }
+
+        messageDiv.innerHTML = content;
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        stats.eventsReceived++;
+        stats.lastEventTime = Date.now();
+        updateStats();
+      }
+
+      function connect() {
+        const url = document.getElementById("sseUrl").value;
+        const token = document.getElementById("authToken").value;
+        const channel = document.getElementById("channel").value;
+        const userId = document.getElementById("userId").value;
+
+        let sseUrl = url;
+        const params = new URLSearchParams();
+
+        if (token) params.append("token", token);
+        if (channel) params.append("channel", channel);
+        if (userId) params.append("user_id", userId);
+
+        if (params.toString()) {
+          sseUrl += "?" + params.toString();
+        }
+
+        try {
+          updateConnectionStatus("connecting", "Подключение...");
+
+          eventSource = new EventSource(sseUrl);
+
+          eventSource.onopen = function (event) {
+            updateConnectionStatus("connected", "Подключено");
+            connectionStartTime = Date.now();
+
+            document.getElementById("connectBtn").disabled = true;
+            document.getElementById("disconnectBtn").disabled = false;
+
+            addMessage("SSE подключение установлено", "info", "system");
+          };
+
+          eventSource.onmessage = function (event) {
+            let data;
+            try {
+              data = JSON.parse(event.data);
+            } catch (e) {
+              data = event.data;
+            }
+
+            addMessage(
+              `Обычное сообщение: ${JSON.stringify(data, null, 2)}`,
+              "event",
+              "message"
+            );
+          };
+
+          // Обработчики специальных событий
+          eventSource.addEventListener("notification", function (event) {
+            let data;
+            try {
+              data = JSON.parse(event.data);
+            } catch (e) {
+              data = { message: event.data };
+            }
+
+            addMessage(
+              `Уведомление: ${JSON.stringify(data, null, 2)}`,
+              "event",
+              "notification"
+            );
+
+            // Показываем браузерное уведомление
+            if (Notification.permission === "granted" && data.title) {
+              showBrowserNotification(
+                data.title,
+                data.body || data.message,
+                data.icon
+              );
+            }
+          });
+
+          eventSource.addEventListener("binary_data", function (event) {
+            let data;
+            try {
+              data = JSON.parse(event.data);
+
+              if (data.binary_data) {
+                const binarySize = atob(data.binary_data).length;
+                stats.binaryDataReceived += binarySize;
+
+                addMessage(
+                  `Бинарные данные: ${binarySize} байт, тип: ${
+                    data.content_type || "неизвестно"
+                  }${data.filename ? `, файл: ${data.filename}` : ""}`,
+                  "binary",
+                  "binary"
+                );
+              }
+            } catch (e) {
+              addMessage(
+                `Ошибка парсинга бинарных данных: ${e.message}`,
+                "error",
+                "binary"
+              );
+            }
+          });
+
+          eventSource.addEventListener("channel_message", function (event) {
+            let data;
+            try {
+              data = JSON.parse(event.data);
+            } catch (e) {
+              data = { message: event.data };
+            }
+
+            addMessage(
+              `Сообщение канала [${
+                data.channel || "неизвестно"
+              }]: ${JSON.stringify(data.data || data, null, 2)}`,
+              "event",
+              "message"
+            );
+          });
+
+          eventSource.addEventListener("system", function (event) {
+            let data;
+            try {
+              data = JSON.parse(event.data);
+            } catch (e) {
+              data = { message: event.data };
+            }
+
+            addMessage(
+              `Системное событие: ${JSON.stringify(data, null, 2)}`,
+              "event",
+              "system"
+            );
+          });
+
+          eventSource.addEventListener("error", function (event) {
+            addMessage(
+              `Ошибка события: ${JSON.stringify(event, null, 2)}`,
+              "error",
+              "system"
+            );
+          });
+
+          eventSource.onerror = function (event) {
+            stats.connectionErrors++;
+
+            if (eventSource.readyState === EventSource.CLOSED) {
+              updateConnectionStatus("disconnected", "Соединение закрыто");
+              addMessage("SSE соединение закрыто сервером", "error", "system");
+
+              document.getElementById("connectBtn").disabled = false;
+              document.getElementById("disconnectBtn").disabled = true;
+              connectionStartTime = null;
+            } else {
+              addMessage(
+                "Ошибка SSE соединения, попытка переподключения...",
+                "error",
+                "system"
+              );
+            }
+
+            updateStats();
+          };
+        } catch (error) {
+          updateConnectionStatus("disconnected", "Ошибка");
+          addMessage(`Ошибка подключения: ${error.message}`, "error", "system");
+          stats.connectionErrors++;
+          updateStats();
+        }
+      }
+
+      function disconnect() {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+
+        updateConnectionStatus("disconnected", "Отключено");
+
+        document.getElementById("connectBtn").disabled = false;
+        document.getElementById("disconnectBtn").disabled = true;
+
+        addMessage("SSE соединение закрыто пользователем", "info", "system");
+        connectionStartTime = null;
+      }
+
+      // Функции для бинарных данных
+      function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+          const fileInfo = document.getElementById("fileInfo");
+          fileInfo.innerHTML = `
+                    <strong>Файл:</strong> ${file.name}<br>
+                    <strong>Размер:</strong> ${(file.size / 1024).toFixed(
+                      2
+                    )} KB<br>
+                    <strong>Тип:</strong> ${file.type || "неизвестно"}
+                `;
+        }
+      }
+
+      async function uploadBinaryFile() {
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          addMessage("Выберите файл для загрузки", "error");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const response = await fetch("/realtime/binary/upload", {
+            method: "POST",
+            body: formData,
+            headers: {
+              Authorization: document.getElementById("authToken").value || "",
+            },
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            addMessage(`Файл успешно загружен: ${file.name}`, "info", "binary");
+          } else {
+            addMessage(
+              `Ошибка загрузки файла: ${response.status}`,
+              "error",
+              "binary"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка загрузки файла: ${error.message}`,
+            "error",
+            "binary"
+          );
+        }
+      }
+
+      async function sendBinaryText() {
+        const text = document.getElementById("binaryText").value;
+        if (!text) {
+          addMessage("Введите текст для отправки", "error");
+          return;
+        }
+
+        try {
+          const response = await fetch("/realtime/binary/text", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              text: text,
+              channel: document.getElementById("channel").value || null,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage(
+              `Текст отправлен как бинарные данные: ${text.length} символов`,
+              "info",
+              "binary"
+            );
+            document.getElementById("binaryText").value = "";
+          } else {
+            addMessage(
+              `Ошибка отправки текста: ${response.status}`,
+              "error",
+              "binary"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка отправки текста: ${error.message}`,
+            "error",
+            "binary"
+          );
+        }
+      }
+
+      async function generateRandomBinary() {
+        try {
+          const response = await fetch("/realtime/binary/generate/random", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              size: 1024,
+              channel: document.getElementById("channel").value || null,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage(
+              "Сгенерированы случайные бинарные данные (1KB)",
+              "info",
+              "binary"
+            );
+          } else {
+            addMessage(
+              `Ошибка генерации данных: ${response.status}`,
+              "error",
+              "binary"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка генерации данных: ${error.message}`,
+            "error",
+            "binary"
+          );
+        }
+      }
+
+      async function generateTestImage() {
+        try {
+          const response = await fetch("/realtime/binary/generate/image", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              width: 200,
+              height: 200,
+              channel: document.getElementById("channel").value || null,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage("Сгенерировано тестовое изображение", "info", "binary");
+          } else {
+            addMessage(
+              `Ошибка генерации изображения: ${response.status}`,
+              "error",
+              "binary"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка генерации изображения: ${error.message}`,
+            "error",
+            "binary"
+          );
+        }
+      }
+
+      async function generateJSONData() {
+        const testData = {
+          timestamp: new Date().toISOString(),
+          data: {
+            numbers: [1, 2, 3, 4, 5],
+            message: "Это JSON данные, отправленные как бинарные",
+            nested: {
+              value: Math.random(),
+              boolean: true,
+            },
+          },
+        };
+
+        try {
+          const response = await fetch("/realtime/binary/json", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              data: testData,
+              channel: document.getElementById("channel").value || null,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage("JSON данные отправлены как бинарные", "info", "binary");
+          } else {
+            addMessage(
+              `Ошибка отправки JSON: ${response.status}`,
+              "error",
+              "binary"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка отправки JSON: ${error.message}`,
+            "error",
+            "binary"
+          );
+        }
+      }
+
+      // Функции уведомлений
+      async function requestNotificationPermission() {
+        if ("Notification" in window) {
+          const permission = await Notification.requestPermission();
+          addMessage(
+            `Разрешение на уведомления: ${permission}`,
+            "info",
+            "notification"
+          );
+        } else {
+          addMessage(
+            "Браузер не поддерживает уведомления",
+            "error",
+            "notification"
+          );
+        }
+      }
+
+      function showBrowserNotification(title, body, icon) {
+        if (Notification.permission === "granted") {
+          const notification = new Notification(title, {
+            body: body,
+            icon: icon || "/static/notification-icon.png",
+            badge: "/static/badge-icon.png",
+            tag: "sse-notification",
+          });
+
+          stats.notificationsShown++;
+          updateStats();
+
+          notification.onclick = function () {
+            window.focus();
+            notification.close();
+          };
+
+          // Автоматически закрыть через 5 секунд
+          setTimeout(() => notification.close(), 5000);
+        }
+      }
+
+      async function sendTestNotification() {
+        const title = document.getElementById("notificationTitle").value;
+        const body = document.getElementById("notificationBody").value;
+        const icon = document.getElementById("notificationIcon").value;
+        const tag = document.getElementById("notificationTag").value;
+
+        try {
+          const response = await fetch("/realtime/notifications/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              title: title,
+              body: body,
+              icon: icon,
+              tag: tag,
+              user_id: document.getElementById("userId").value || null,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage(
+              "Уведомление отправлено через API",
+              "info",
+              "notification"
+            );
+          } else {
+            addMessage(
+              `Ошибка отправки уведомления: ${response.status}`,
+              "error",
+              "notification"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка отправки уведомления: ${error.message}`,
+            "error",
+            "notification"
+          );
+        }
+      }
+
+      async function sendChannelNotification() {
+        const title = document.getElementById("notificationTitle").value;
+        const body = document.getElementById("notificationBody").value;
+        const channel = document.getElementById("channel").value;
+
+        try {
+          const response = await fetch("/realtime/notifications/channel", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              title: title,
+              body: body,
+              channel: channel,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage(
+              `Уведомление отправлено в канал: ${channel}`,
+              "info",
+              "notification"
+            );
+          } else {
+            addMessage(
+              `Ошибка отправки в канал: ${response.status}`,
+              "error",
+              "notification"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка отправки в канал: ${error.message}`,
+            "error",
+            "notification"
+          );
+        }
+      }
+
+      async function sendBroadcastNotification() {
+        const title = document.getElementById("notificationTitle").value;
+        const body = document.getElementById("notificationBody").value;
+
+        try {
+          const response = await fetch("/realtime/notifications/broadcast", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: document.getElementById("authToken").value || "",
+            },
+            body: JSON.stringify({
+              title: title,
+              body: body,
+            }),
+          });
+
+          if (response.ok) {
+            addMessage(
+              "Широковещательное уведомление отправлено",
+              "info",
+              "notification"
+            );
+          } else {
+            addMessage(
+              `Ошибка широковещательной отправки: ${response.status}`,
+              "error",
+              "notification"
+            );
+          }
+        } catch (error) {
+          addMessage(
+            `Ошибка широковещательной отправки: ${error.message}`,
+            "error",
+            "notification"
+          );
+        }
+      }
+
+      function showTestBrowserNotification() {
+        showBrowserNotification(
+          "Тестовое уведомление",
+          "Это тестовое браузерное уведомление для проверки функциональности",
+          "/static/notification-icon.png"
+        );
+      }
+
+      // Утилиты
+      function updateEventFilter() {
+        eventFilter = document.getElementById("eventTypeFilter").value;
+        addMessage(
+          `Фильтр событий изменен на: ${eventFilter}`,
+          "info",
+          "system"
+        );
+      }
+
+      function toggleTimestamps() {
+        showTimestamps = document.getElementById("showTimestamps").checked;
+        addMessage(
+          `Отображение времени: ${showTimestamps ? "включено" : "выключено"}`,
+          "info",
+          "system"
+        );
+      }
+
+      function clearMessages() {
+        document.getElementById("messages").innerHTML = "";
+        addMessage("Лог событий очищен", "info", "system");
+      }
+
+      function testReconnection() {
+        if (eventSource) {
+          addMessage("Тестируем переподключение...", "info", "system");
+          eventSource.close();
+          setTimeout(connect, 1000);
+        } else {
+          addMessage(
+            "Нет активного соединения для тестирования",
+            "error",
+            "system"
+          );
+        }
+      }
+
+      function checkConnectionHealth() {
+        if (eventSource) {
+          const state = eventSource.readyState;
+          let stateText = "";
+          switch (state) {
+            case EventSource.CONNECTING:
+              stateText = "подключение";
+              break;
+            case EventSource.OPEN:
+              stateText = "открыто";
+              break;
+            case EventSource.CLOSED:
+              stateText = "закрыто";
+              break;
+            default:
+              stateText = "неизвестно";
+          }
+          addMessage(
+            `Состояние соединения: ${stateText} (${state})`,
+            "info",
+            "system"
+          );
+        } else {
+          addMessage("Соединение не установлено", "error", "system");
+        }
+      }
+
+      function resetStats() {
+        stats = {
+          eventsReceived: 0,
+          binaryDataReceived: 0,
+          notificationsShown: 0,
+          connectionErrors: 0,
+        };
+        connectionStartTime = Date.now();
+        updateStats();
+        addMessage("Статистика сброшена", "info", "system");
+      }
+
+      // Инициализация
+      updateConnectionStatus("disconnected", "Отключено");
+      updateStats();
+
+      // Обновляем статистику каждую секунду
+      setInterval(updateStats, 1000);
+
+      // Проверяем поддержку уведомлений
+      if ("Notification" in window && Notification.permission === "default") {
+        addMessage(
+          '💡 Нажмите "Разрешить уведомления" для получения браузерных уведомлений',
+          "info",
+          "notification"
+        );
+      }
+    </script>
+  </body>
+</html>
