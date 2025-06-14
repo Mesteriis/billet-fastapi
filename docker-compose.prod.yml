@@ -1,0 +1,342 @@
+# =============================================================================
+# Docker Compose для Production развертывания
+# Запуск: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ===========================================================================
+  # FastAPI Application - production настройки
+  # ===========================================================================
+  app:
+    environment:
+      # Production настройки
+      ENVIRONMENT: production
+      DEBUG: false
+      LOG_LEVEL: INFO
+
+      # Безопасность
+      WEBSOCKET_AUTH_REQUIRED: true
+      SSE_AUTH_REQUIRED: true
+
+      # CORS строгие настройки
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://yourdomain.com}
+
+      # Production database pool
+      DB_POOL_SIZE: 20
+      DB_MAX_OVERFLOW: 30
+      DB_POOL_TIMEOUT: 30
+      DB_POOL_RECYCLE: 3600
+
+      # Включаем трассировку
+      TRACING_ENABLED: true
+
+    command:
+      [
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "4",
+        "--worker-class",
+        "uvicorn.workers.UvicornWorker",
+      ]
+
+    deploy:
+      replicas: 3 # Запускаем 3 инстанса приложения
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "1.0"
+          memory: 512M
+
+  # ===========================================================================
+  # TaskIQ Worker - production настройки
+  # ===========================================================================
+  taskiq-worker:
+    environment:
+      LOG_LEVEL: INFO
+      TASKIQ_TASK_TIMEOUT: 600 # Больший таймаут для production
+      TASKIQ_MAX_RETRIES: 5
+    deploy:
+      replicas: 4 # Больше воркеров для production
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ===========================================================================
+  # Messaging Service - production настройки
+  # ===========================================================================
+  messaging-service:
+    environment:
+      LOG_LEVEL: INFO
+    deploy:
+      replicas: 3 # Больше инстансов для production
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  # ===========================================================================
+  # PostgreSQL - production настройки
+  # ===========================================================================
+  postgres:
+    environment:
+      # Production PostgreSQL настройки
+      POSTGRES_SHARED_BUFFERS: 512MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 2GB
+      POSTGRES_MAINTENANCE_WORK_MEM: 128MB
+      POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.9
+      POSTGRES_WAL_BUFFERS: 16MB
+      POSTGRES_DEFAULT_STATISTICS_TARGET: 100
+      POSTGRES_RANDOM_PAGE_COST: 1.1
+      POSTGRES_EFFECTIVE_IO_CONCURRENCY: 200
+      POSTGRES_WORK_MEM: 4MB
+      POSTGRES_MIN_WAL_SIZE: 1GB
+      POSTGRES_MAX_WAL_SIZE: 4GB
+
+      # Логирование для production
+      POSTGRES_LOG_STATEMENT: ddl
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: 1000
+
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+  # ===========================================================================
+  # Redis - production настройки
+  # ===========================================================================
+  redis:
+    command: >
+      redis-server 
+      --appendonly yes 
+      --appendfsync everysec
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --loglevel notice
+
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ===========================================================================
+  # RabbitMQ - production настройки
+  # ===========================================================================
+  rabbitmq:
+    environment:
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.7
+      RABBITMQ_DISK_FREE_LIMIT: 5GB
+      RABBITMQ_LOG_LEVEL: info
+
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ===========================================================================
+  # Nginx - production load balancer
+  # ===========================================================================
+  nginx:
+    profiles: [] # Всегда включен в production
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.2"
+          memory: 128M
+
+  # ===========================================================================
+  # Monitoring и логирование
+  # ===========================================================================
+
+  # Prometheus - мониторинг метрик
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fastapi-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
+    networks:
+      - monitoring-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # Grafana - визуализация метрик
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fastapi-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    networks:
+      - monitoring-network
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.2"
+          memory: 256M
+
+  # Loki - сбор логов
+  loki:
+    image: grafana/loki:latest
+    container_name: fastapi-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/tmp/loki
+      - ./config/loki/loki.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring-network
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.2"
+          memory: 256M
+
+  # Promtail - агент для сбора логов
+  promtail:
+    image: grafana/promtail:latest
+    container_name: fastapi-promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitoring-network
+    depends_on:
+      - loki
+
+  # Node Exporter - метрики системы
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: fastapi-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - monitoring-network
+
+# ===========================================================================
+# Production volumes
+# ===========================================================================
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local

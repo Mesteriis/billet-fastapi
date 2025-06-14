@@ -1,0 +1,239 @@
+# =============================================================================
+# Docker Compose для разработки
+# Запуск: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ===========================================================================
+  # FastAPI Application - режим разработки
+  # ===========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      # Переменные для разработки
+      ENVIRONMENT: development
+      DEBUG: true
+      LOG_LEVEL: DEBUG
+
+      # Отключаем некоторые компоненты для разработки
+      WEBSOCKET_AUTH_REQUIRED: false
+      SSE_AUTH_REQUIRED: false
+      TRACING_ENABLED: false
+
+      # Разрешаем все CORS origins для разработки
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080"
+
+      # Быстрая отладка БД
+      DB_ECHO: true
+      DB_POOL_SIZE: 5
+      DB_MAX_OVERFLOW: 5
+    volumes:
+      # Монтируем код для live reload
+      - ./src:/app/src:ro
+      - ./migrations:/app/migrations:ro
+      - ./templates:/app/templates:ro
+      - ./tests:/app/tests:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./Makefile:/app/Makefile:ro
+
+      # Volumes для логов и отчетов (перезаписываемые)
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./htmlcov:/app/htmlcov
+    command:
+      [
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
+
+  # ===========================================================================
+  # TaskIQ Worker - режим разработки
+  # ===========================================================================
+  taskiq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      LOG_LEVEL: DEBUG
+      TASKIQ_TASK_TIMEOUT: 60 # Меньший таймаут для разработки
+    volumes:
+      - ./src:/app/src:ro
+      - ./logs:/app/logs
+    command:
+      [
+        "taskiq",
+        "worker",
+        "src.core.taskiq_client:broker",
+        "--fs-discover",
+        "--reload",
+      ]
+    deploy:
+      replicas: 1 # Один воркер для разработки
+
+  # ===========================================================================
+  # Messaging Service - режим разработки
+  # ===========================================================================
+  messaging-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./src:/app/src:ro
+      - ./logs:/app/logs
+    command: ["faststream", "run", "src.core.messaging:app", "--reload"]
+    deploy:
+      replicas: 1 # Один инстанс для разработки
+
+  # ===========================================================================
+  # PostgreSQL - настройки для разработки
+  # ===========================================================================
+  postgres:
+    ports:
+      - "5432:5432" # Экспортируем порт для локального подключения
+    environment:
+      # Включаем логирование для отладки
+      POSTGRES_LOG_STATEMENT: all
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: 0
+    volumes:
+      # Добавляем volume с инициализацией для разработки
+      - ./scripts/postgres/dev-init.sql:/docker-entrypoint-initdb.d/dev-init.sql:ro
+
+  # ===========================================================================
+  # Redis - настройки для разработки
+  # ===========================================================================
+  redis:
+    ports:
+      - "6379:6379" # Экспортируем порт для локального подключения
+    command: >
+      redis-server 
+      --appendonly no
+      --save ""
+      --maxmemory 128mb
+      --loglevel verbose
+
+  # ===========================================================================
+  # RabbitMQ - настройки для разработки
+  # ===========================================================================
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Management UI всегда доступен в dev
+    environment:
+      RABBITMQ_LOG_LEVEL: debug
+
+  # ===========================================================================
+  # Дополнительные сервисы для разработки
+  # ===========================================================================
+
+  # Adminer - всегда включен в dev режиме
+  adminer:
+    profiles: [] # Убираем профиль, чтобы всегда запускался
+
+  # MailHog - локальный SMTP сервер для тестирования email
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: fastapi-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    networks:
+      - fastapi-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Redis Commander - веб-интерфейс для Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: fastapi-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - fastapi-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ===========================================================================
+  # Test Runner - для запуска тестов в контейнере
+  # ===========================================================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: fastapi-test
+    environment:
+      # Тестовая база данных
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: mango_msg_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+
+      # Redis для тестов
+      REDIS_HOST: redis
+      REDIS_DB: 15 # Отдельная БД для тестов
+
+      # RabbitMQ для тестов
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_VHOST: /test
+
+      # Настройки тестирования
+      TESTING: true
+      LOG_LEVEL: WARNING
+      PYTHONPATH: /app/src
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./reports:/app/reports
+      - ./htmlcov:/app/htmlcov
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fastapi-network
+    profiles:
+      - test # Запускается только при указании профиля
+    command:
+      ["pytest", "--cov=src", "--cov-report=html", "--cov-report=term-missing"]
+
+# ===========================================================================
+# Volumes для разработки (дополнительные)
+# ===========================================================================
+volumes:
+  # Volume для node_modules если потребуется frontend
+  node_modules:
+    driver: local

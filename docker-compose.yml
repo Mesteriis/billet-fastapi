@@ -1,0 +1,472 @@
+# =============================================================================
+# Docker Compose для FastAPI проекта со всеми сервисами
+# =============================================================================
+
+version: "3.8"
+
+# =============================================================================
+# Сети
+# =============================================================================
+networks:
+  fastapi-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+  # Отдельная сеть для мониторинга (если потребуется)
+  monitoring-network:
+    driver: bridge
+
+# =============================================================================
+# Volumes (постоянное хранение данных)
+# =============================================================================
+volumes:
+  # База данных
+  postgres_data:
+    driver: local
+  postgres_backups:
+    driver: local
+
+  # Redis данные
+  redis_data:
+    driver: local
+
+  # RabbitMQ данные
+  rabbitmq_data:
+    driver: local
+  rabbitmq_logs:
+    driver: local
+
+  # Приложение
+  app_logs:
+    driver: local
+  app_reports:
+    driver: local
+  app_backups:
+    driver: local
+
+  # OpenTelemetry
+  jaeger_data:
+    driver: local
+
+# =============================================================================
+# Сервисы
+# =============================================================================
+services:
+  # ===========================================================================
+  # PostgreSQL - основная база данных
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: fastapi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mango_msg
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      # Настройки производительности
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_MAINTENANCE_WORK_MEM: 64MB
+      POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.7
+      POSTGRES_RANDOM_PAGE_COST: 1.1
+      POSTGRES_EFFECTIVE_IO_CONCURRENCY: 200
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+      - ./scripts/postgres:/docker-entrypoint-initdb.d:ro
+    networks:
+      fastapi-network:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mango_msg"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # Redis - кэширование, TaskIQ, сессии
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: fastapi-redis
+    restart: unless-stopped
+    command: >
+      redis-server 
+      --appendonly yes 
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      fastapi-network:
+        ipv4_address: 172.20.0.11
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # RabbitMQ - система сообщений
+  # ===========================================================================
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: fastapi-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      # Настройки производительности
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+      RABBITMQ_DISK_FREE_LIMIT: 2GB
+      # Включаем плагины
+      RABBITMQ_PLUGINS: rabbitmq_management,rabbitmq_prometheus,rabbitmq_shovel,rabbitmq_shovel_management
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672" # AMQP
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
+      - ./config/rabbitmq:/etc/rabbitmq:ro
+    networks:
+      fastapi-network:
+        ipv4_address: 172.20.0.12
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # Migration Service - миграции базы данных
+  # ===========================================================================
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migration
+    container_name: fastapi-migration
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+      POSTGRES_DB: mango_msg
+      POSTGRES_PORT: 5432
+
+      # Настройки для миграций
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fastapi-network
+    volumes:
+      - app_logs:/app/logs
+    restart: "no" # Запускается один раз
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ===========================================================================
+  # FastAPI Application - основное приложение
+  # ===========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: fastapi-app
+    restart: unless-stopped
+    environment:
+      # Основные настройки
+      PROJECT_NAME: "FastAPI Project"
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      SECRET_KEY: ${SECRET_KEY:-change-this-secret-key-in-production}
+
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+      POSTGRES_DB: mango_msg
+      POSTGRES_PORT: 5432
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+      # Компоненты
+      WEBSOCKET_ENABLED: ${WEBSOCKET_ENABLED:-true}
+      SSE_ENABLED: ${SSE_ENABLED:-true}
+      TELEGRAM_BOTS_ENABLED: ${TELEGRAM_BOTS_ENABLED:-false}
+      MESSAGING_ENABLED: true
+      TRACING_ENABLED: ${TRACING_ENABLED:-true}
+
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_EXPORTER_OTLP_INSECURE: true
+
+      # Настройки производительности
+      DB_POOL_SIZE: 20
+      DB_MAX_OVERFLOW: 10
+      DB_POOL_TIMEOUT: 30
+
+      # Безопасность
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+
+      # Telegram (если включен)
+      TELEGRAM_BOT_MAIN_TOKEN: ${TELEGRAM_BOT_MAIN_TOKEN:-}
+      TELEGRAM_ADMIN_USERS: ${TELEGRAM_ADMIN_USERS:-}
+
+      # Python path
+      PYTHONPATH: /app/src
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - fastapi-network
+      - monitoring-network
+    volumes:
+      - app_logs:/app/logs
+      - app_reports:/app/reports
+      - app_backups:/app/backups
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # TaskIQ Worker - обработка фоновых задач
+  # ===========================================================================
+  taskiq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: taskiq-worker
+    container_name: fastapi-taskiq-worker
+    restart: unless-stopped
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+      POSTGRES_DB: mango_msg
+
+      # Redis для TaskIQ
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # TaskIQ настройки
+      TASKIQ_MAX_RETRIES: 3
+      TASKIQ_RETRY_DELAY: 5
+      TASKIQ_TASK_TIMEOUT: 300
+
+      # Логирование
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - fastapi-network
+    volumes:
+      - app_logs:/app/logs
+    deploy:
+      replicas: 2 # Запускаем 2 воркера
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # Messaging Service - FastStream + RabbitMQ
+  # ===========================================================================
+  messaging-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: messaging-service
+    container_name: fastapi-messaging
+    restart: unless-stopped
+    environment:
+      # Database
+      POSTGRES_SERVER: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_postgres_password}
+      POSTGRES_DB: mango_msg
+
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+      # Redis для кэширования
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Логирование
+      LOG_LEVEL: INFO
+      PYTHONPATH: /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - fastapi-network
+    volumes:
+      - app_logs:/app/logs
+    deploy:
+      replicas: 2 # Запускаем 2 инстанса messaging service
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # Jaeger - трассировка (OpenTelemetry)
+  # ===========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: fastapi-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+      COLLECTOR_ZIPKIN_HOST_PORT: :9411
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "14250:14250" # gRPC
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - monitoring-network
+    volumes:
+      - jaeger_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # ===========================================================================
+  # Nginx - reverse proxy (опционально для production)
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: fastapi-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl:/etc/nginx/ssl:ro
+      - ./static:/static:ro
+    depends_on:
+      - app
+    networks:
+      - fastapi-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - nginx # Запускается только при указании профиля
+
+  # ===========================================================================
+  # Adminer - веб-интерфейс для PostgreSQL (для разработки)
+  # ===========================================================================
+  adminer:
+    image: adminer:latest
+    container_name: fastapi-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha-dark
+    depends_on:
+      - postgres
+    networks:
+      - fastapi-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    profiles:
+      - dev # Запускается только в режиме разработки
