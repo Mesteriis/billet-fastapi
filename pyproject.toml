@@ -392,6 +392,7 @@ truncate_slug_length = 40
 [tool.mypy]
 python_version = "3.11"
 # Начинаем с мягких настроек для постепенного улучшения типизации
+future_annotations = true
 strict = false
 warn_return_any = false
 warn_unused_configs = true

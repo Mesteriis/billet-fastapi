@@ -51,12 +51,4 @@ __all__ = [
     "ws_router",
     "sse_router",
     "webrtc_router",
-    # Clients
-    "WSClient",
-    "SSEClient",
-    "SimpleSyncSSEClient",
-    "create_ws_client",
-    "create_authenticated_client",
-    "create_sse_client",
-    "create_authenticated_sse_client",
 ]

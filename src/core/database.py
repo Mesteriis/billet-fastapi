@@ -59,9 +59,3 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
                 raise
             finally:
                 await session.close()
-
-
-async def close_db() -> None:
-    """Закрыть подключение к базе данных."""
-    with tracer.start_as_current_span("database.close_db"):
-        await engine.dispose()
