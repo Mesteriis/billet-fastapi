@@ -191,10 +191,17 @@ markers = [
     "e2e: End-to-end browser tests",
     "mocked: Tests with mocked external APIs",
     "factory: Tests using factories",
+    "factories: Factory tests",
     "alembic: Alembic migration tests",
     "enhanced: Enhanced test scenarios",
     "quiet_logs: Tests with quiet logging",
     "verbose_logs: Tests with verbose logging",
+    "helpers: Helper function tests",
+    "mocking: Mocking tests",
+    "settings: Settings tests",
+    "cleanup: Cleanup tests",
+    "edge_cases: Edge case tests",
+    "security: Security tests"
 ]
 
 # Конфигурация pytest-alembic

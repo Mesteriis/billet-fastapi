@@ -325,11 +325,26 @@ class AsyncApiTestClient(AsyncClient):
         self._ai_generated_tests: List[AIGeneratedTest] = []
         self._openapi_schema: Optional[Dict[str, Any]] = None
         self._security_payloads: Dict[SecurityTestType, List[str]] = self._init_security_payloads()
+        # Простой трекер производительности
+        self.performance_tracker = self._create_performance_tracker()
         super().__init__(**kwargs)
 
         # Настраиваем зависимости для тестов
         if self._app:
             self._setup_test_dependencies()
+
+    def _create_performance_tracker(self):
+        """Создать простой трекер производительности."""
+        import time
+
+        class SimplePerformanceTracker:
+            def start_timer(self):
+                return time.time()
+
+            def end_timer(self, start_time):
+                return time.time() - start_time
+
+        return SimplePerformanceTracker()
 
     def url_for(self, name: str, /, **path_params: Any) -> str:
         """
@@ -464,9 +479,41 @@ class AsyncApiTestClient(AsyncClient):
         if email:
             # В реальном приложении здесь бы был поиск в БД
             # Для тестов создаем пользователя с указанным email
-            self.auth_user = await UserFactory.create(email=email, **user_kwargs)
+            from tests.factories.user_factory import VerifiedUserFactory
+
+            self.auth_user = VerifiedUserFactory(email=email, **user_kwargs)
         elif user:
             self.auth_user = user
+            # Если у пользователя нет ID, создаем его в БД
+            if hasattr(self, "db_session") and self.db_session:
+                # Проверяем, есть ли пользователь в БД
+                from apps.users.repository import UserRepository
+
+                repo = UserRepository()
+                try:
+                    existing_user = await repo.get_by_email(self.db_session, email=user.email)
+                    if not existing_user:
+                        # Создаем пользователя в БД
+                        from apps.users.models import User
+
+                        db_user = User(
+                            id=user.id,
+                            email=user.email,
+                            username=user.username,
+                            full_name=user.full_name,
+                            hashed_password=user.hashed_password,
+                            is_active=user.is_active,
+                            is_verified=user.is_verified,
+                            is_superuser=user.is_superuser,
+                        )
+                        self.db_session.add(db_user)
+                        await self.db_session.commit()
+                        self.auth_user = db_user
+                    else:
+                        self.auth_user = existing_user
+                except Exception as e:
+                    logger.warning(f"Не удалось создать пользователя в БД: {e}")
+                    # Продолжаем с фабричным пользователем
         else:
             # Создаем нового пользователя
             self.auth_user = await self._generate_user(
@@ -496,6 +543,12 @@ class AsyncApiTestClient(AsyncClient):
 
         # Создаем JWT токены
         if self.auth_user:
+            # Убеждаемся, что у пользователя есть UUID ID
+            if not hasattr(self.auth_user, "id") or self.auth_user.id is None:
+                import uuid
+
+                self.auth_user.id = uuid.uuid4()
+
             access_token, refresh_token, jti = self._jwt_service.create_token_pair(
                 user_id=str(self.auth_user.id),
                 email=self.auth_user.email,
@@ -535,9 +588,14 @@ class AsyncApiTestClient(AsyncClient):
         Returns:
             Созданный пользователь
         """
-        user = await UserFactory.create(
-            is_active=is_active, is_verified=is_email_verified, is_superuser=is_superuser, **kwargs
-        )
+        from tests.factories.user_factory import AdminUserFactory, SimpleUserFactory, VerifiedUserFactory
+
+        if is_superuser:
+            user = AdminUserFactory(is_active=is_active, **kwargs)
+        elif is_email_verified:
+            user = VerifiedUserFactory(is_active=is_active, **kwargs)
+        else:
+            user = SimpleUserFactory(is_active=is_active, is_verified=is_email_verified, **kwargs)
         return user
 
     def enable_performance_tracking(self) -> None:
@@ -2510,5 +2568,6 @@ class AsyncApiTestClient(AsyncClient):
         def get_test_jwt_service():
             return self._jwt_service
 
-        # Переопределяем зависимость в приложении
+            # Переопределяем зависимость в приложении
+
         self._app.dependency_overrides[get_jwt_service] = get_test_jwt_service

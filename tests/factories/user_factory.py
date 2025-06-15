@@ -7,9 +7,11 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import factory
 import factory.fuzzy
-from factory import LazyFunction, Sequence, SubFactory, post_generation
+from factory.declarations import LazyFunction, Sequence, SubFactory
 from factory.faker import Faker
+from factory.helpers import post_generation
 
 from apps.auth.models import RefreshToken
 from apps.users.models import User
@@ -50,15 +52,18 @@ class UserFactory(factory.alchemy.SQLAlchemyModelFactory):
     updated_at = LazyFunction(datetime.utcnow)
 
 
-class SimpleUserFactory(factory.Factory):
+class SimpleUserFactory(factory.base.Factory):
     """Простая фабрика для создания пользователей без SQLAlchemy."""
 
     class Meta:
         model = User
 
-    # Основные поля
-    email = Faker("email")
-    username = Faker("user_name")
+    # UUID ID
+    id = LazyFunction(lambda: uuid.uuid4())
+
+    # Основные поля с уникальными значениями
+    email = Sequence(lambda n: f"user_{n}_{uuid.uuid4().hex[:8]}@example.com")
+    username = Sequence(lambda n: f"user_{n}_{uuid.uuid4().hex[:8]}")
     full_name = Faker("name")
 
     # Аутентификация (захардкодированный хеш для тестов)
@@ -82,7 +87,7 @@ class VerifiedUserFactory(SimpleUserFactory):
     """Фабрика для верифицированных пользователей."""
 
     is_verified = True
-    verified_at = LazyFunction(datetime.utcnow)
+    email_verified_at = LazyFunction(datetime.utcnow)
 
 
 class AdminUserFactory(SimpleUserFactory):

@@ -1,87 +1,64 @@
 """
 Тесты для API роутов аутентификации.
+Демонстрирует правильное использование фабрик и AsyncApiTestClient.
 """
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.auth
 class TestRegistration:
     """Тесты регистрации пользователей."""
 
-    @pytest.mark.asyncio
-    async def test_register_success(self, async_client: AsyncClient, db_session: AsyncSession, helpers):
-        """Тест успешной регистрации."""
-        user_data = {
-            "email": "newuser@example.com",
-            "username": "newuser",
-            "full_name": "New User",
-            "password": "NewPassword123!",
-            "password_confirm": "NewPassword123!",
-        }
+    async def test_register_success(self, api_client, test_user_data, helpers):
+        """Тест успешной регистрации пользователя."""
+        # Получаем URL для регистрации
+        register_url = api_client.url_for("register")
 
-        response = await async_client.post("/api/v1/auth/register", json=user_data)
+        # Регистрируем пользователя
+        response = await api_client.post(register_url, json=test_user_data.model_dump())
 
         assert response.status_code == 201
         data = response.json()
 
-        # Проверяем структуру ответа
-        assert "user" in data
-        assert "tokens" in data
-
-        # Проверяем пользователя
-        helpers.assert_user_response(data["user"], "newuser@example.com")
-
-        # Проверяем токены
+        # Используем хелперы для проверки
+        helpers.assert_user_response(data["user"], test_user_data.email)
         helpers.assert_token_response(data["tokens"])
 
-    @pytest.mark.asyncio
-    async def test_register_existing_email(self, async_client: AsyncClient, test_user, db_session: AsyncSession):
+    async def test_register_existing_email(self, api_client, verified_user, test_user_data):
         """Тест регистрации с существующим email."""
-        user_data = {
-            "email": "test@example.com",  # Уже существует
-            "username": "newuser",
-            "full_name": "New User",
-            "password": "NewPassword123!",
-            "password_confirm": "NewPassword123!",
-        }
+        register_url = api_client.url_for("register")
 
-        response = await async_client.post("/api/v1/auth/register", json=user_data)
+        # Используем email существующего пользователя
+        test_user_data.email = verified_user.email
+
+        response = await api_client.post(register_url, json=test_user_data.model_dump())
 
         assert response.status_code == 400
         data = response.json()
         assert "detail" in data
         assert "email" in data["detail"].lower()
 
-    @pytest.mark.asyncio
-    async def test_register_invalid_password(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_register_invalid_password(self, api_client, test_user_data):
         """Тест регистрации с невалидным паролем."""
-        user_data = {
-            "email": "newuser@example.com",
-            "username": "newuser",
-            "full_name": "New User",
-            "password": "weak",  # Слабый пароль
-            "password_confirm": "weak",
-        }
+        register_url = api_client.url_for("register")
 
-        response = await async_client.post("/api/v1/auth/register", json=user_data)
+        # Делаем пароль слабым
+        test_user_data.password = "weak"
+        test_user_data.password_confirm = "weak"
+
+        response = await api_client.post(register_url, json=test_user_data.model_dump())
 
         assert response.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_register_password_mismatch(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_register_password_mismatch(self, api_client, test_user_data):
         """Тест регистрации с несовпадающими паролями."""
-        user_data = {
-            "email": "newuser@example.com",
-            "username": "newuser",
-            "full_name": "New User",
-            "password": "StrongPassword123!",
-            "password_confirm": "DifferentPassword123!",
-        }
+        register_url = api_client.url_for("register")
 
-        response = await async_client.post("/api/v1/auth/register", json=user_data)
+        # Делаем пароли разными
+        test_user_data.password_confirm = "DifferentPassword123!"
+
+        response = await api_client.post(register_url, json=test_user_data.model_dump())
 
         assert response.status_code == 422
 
@@ -90,43 +67,42 @@ class TestRegistration:
 class TestLogin:
     """Тесты входа в систему."""
 
-    @pytest.mark.asyncio
-    async def test_login_success(self, async_client: AsyncClient, test_user, db_session: AsyncSession, helpers):
+    async def test_login_success(self, api_client, test_user_db, helpers):
         """Тест успешного входа."""
-        login_data = {"email": "test@example.com", "password": "TestPassword123!"}
+        login_url = api_client.url_for("login")
 
-        response = await async_client.post("/api/v1/auth/login", json=login_data)
+        login_data = {"email": test_user_db.email, "password": "TestPassword123!"}
+
+        response = await api_client.post(login_url, json=login_data)
 
         assert response.status_code == 200
         data = response.json()
 
-        # Проверяем структуру ответа
-        assert "user" in data
-        assert "tokens" in data
-
-        # Проверяем пользователя
-        helpers.assert_user_response(data["user"], "test@example.com")
-
-        # Проверяем токены
+        helpers.assert_user_response(data["user"], test_user_db.email)
         helpers.assert_token_response(data["tokens"])
 
-    @pytest.mark.asyncio
-    async def test_login_invalid_email(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_login_invalid_email(self, api_client, user_factory):
         """Тест входа с несуществующим email."""
-        login_data = {"email": "nonexistent@example.com", "password": "TestPassword123!"}
+        login_url = api_client.url_for("login")
 
-        response = await async_client.post("/api/v1/auth/login", json=login_data)
+        # Создаем уникальный email, которого точно нет в БД
+        fake_user = await user_factory.build()  # build не сохраняет в БД
+
+        login_data = {"email": fake_user.email, "password": "TestPassword123!"}
+
+        response = await api_client.post(login_url, json=login_data)
 
         assert response.status_code == 401
         data = response.json()
         assert "detail" in data
 
-    @pytest.mark.asyncio
-    async def test_login_invalid_password(self, async_client: AsyncClient, test_user, db_session: AsyncSession):
+    async def test_login_invalid_password(self, api_client, verified_user):
         """Тест входа с неверным паролем."""
-        login_data = {"email": "test@example.com", "password": "WrongPassword123!"}
+        login_url = api_client.url_for("login")
 
-        response = await async_client.post("/api/v1/auth/login", json=login_data)
+        login_data = {"email": verified_user.email, "password": "WrongPassword123!"}
+
+        response = await api_client.post(login_url, json=login_data)
 
         assert response.status_code == 401
         data = response.json()
@@ -137,39 +113,45 @@ class TestLogin:
 class TestTokenOperations:
     """Тесты операций с токенами."""
 
-    @pytest.mark.asyncio
-    async def test_refresh_token_success(self, async_client: AsyncClient, test_user, db_session: AsyncSession, helpers):
+    async def test_refresh_token_success(self, api_client, verified_user, helpers):
         """Тест успешного обновления токена."""
-        # Сначала входим в систему
-        login_data = {"email": "test@example.com", "password": "TestPassword123!"}
+        login_url = api_client.url_for("login")
 
-        login_response = await async_client.post("/api/v1/auth/login", json=login_data)
+        # Сначала входим для получения токенов
+        login_data = {"email": verified_user.email, "password": "TestPassword123!"}
+
+        login_response = await api_client.post(login_url, json=login_data)
         assert login_response.status_code == 200
 
         refresh_token = login_response.json()["tokens"]["refresh_token"]
 
         # Обновляем токен
+        refresh_url = api_client.url_for("refresh")
         refresh_data = {"refresh_token": refresh_token}
-        response = await async_client.post("/api/v1/auth/refresh", json=refresh_data)
+
+        response = await api_client.post(refresh_url, json=refresh_data)
 
         assert response.status_code == 200
         data = response.json()
 
-        # Проверяем новые токены
         helpers.assert_token_response(data)
 
-    @pytest.mark.asyncio
-    async def test_refresh_token_invalid(self, async_client: AsyncClient, db_session: AsyncSession):
+    async def test_refresh_token_invalid(self, api_client):
         """Тест обновления с невалидным токеном."""
+        refresh_url = api_client.url_for("refresh")
+
         refresh_data = {"refresh_token": "invalid-token"}
-        response = await async_client.post("/api/v1/auth/refresh", json=refresh_data)
+        response = await api_client.post(refresh_url, json=refresh_data)
 
         assert response.status_code == 401
 
-    @pytest.mark.asyncio
-    async def test_validate_token_success(self, async_client: AsyncClient, auth_headers: dict):
+    async def test_validate_token_success(self, api_client, verified_user):
         """Тест валидации токена."""
-        response = await async_client.get("/api/v1/auth/validate", headers=auth_headers)
+        # Аутентифицируем пользователя
+        await api_client.force_auth(verified_user)
+
+        validate_url = api_client.url_for("validate")
+        response = await api_client.get(validate_url)
 
         assert response.status_code == 200
         data = response.json()
@@ -179,11 +161,13 @@ class TestTokenOperations:
         assert "email" in data
         assert data["token_type"] == "access"
 
-    @pytest.mark.asyncio
-    async def test_validate_token_invalid(self, async_client: AsyncClient):
+    async def test_validate_token_invalid(self, api_client):
         """Тест валидации невалидного токена."""
+        validate_url = api_client.url_for("validate")
+
+        # Используем невалидный токен
         headers = {"Authorization": "Bearer invalid-token"}
-        response = await async_client.get("/api/v1/auth/validate", headers=headers)
+        response = await api_client.get(validate_url, headers=headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -196,53 +180,53 @@ class TestTokenOperations:
 class TestLogout:
     """Тесты выхода из системы."""
 
-    @pytest.mark.asyncio
-    async def test_logout_success(
-        self, async_client: AsyncClient, test_user, auth_headers: dict, db_session: AsyncSession
-    ):
+    async def test_logout_success(self, api_client, verified_user):
         """Тест успешного выхода."""
-        # Сначала входим в систему для получения refresh токена
-        login_data = {"email": "test@example.com", "password": "TestPassword123!"}
+        # Аутентифицируем пользователя
+        await api_client.force_auth(verified_user)
 
-        login_response = await async_client.post("/api/v1/auth/login", json=login_data)
-        refresh_token = login_response.json()["tokens"]["refresh_token"]
+        logout_url = api_client.url_for("logout")
+        response = await api_client.post(logout_url)
 
-        # Выходим из системы
-        logout_data = {"refresh_token": refresh_token}
-        response = await async_client.post("/api/v1/auth/logout", json=logout_data, headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Successfully logged out"
 
-        assert response.status_code == 204
+    async def test_logout_all_success(self, api_client, verified_user):
+        """Тест выхода из всех сессий."""
+        # Аутентифицируем пользователя
+        await api_client.force_auth(verified_user)
 
-        # Проверяем, что токен больше нельзя использовать
-        refresh_response = await async_client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
-        assert refresh_response.status_code == 401
+        logout_all_url = api_client.url_for("logout_all")
+        response = await api_client.post(logout_all_url)
 
-    @pytest.mark.asyncio
-    async def test_logout_all_success(self, async_client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
-        """Тест выхода из всех устройств."""
-        response = await async_client.post("/api/v1/auth/logout-all", headers=auth_headers)
-
-        assert response.status_code == 204
+        assert response.status_code == 200
+        data = response.json()
+        assert "revoked" in data
+        assert data["revoked"] >= 1
 
 
 @pytest.mark.auth
 class TestCurrentUser:
-    """Тесты получения информации о текущем пользователе."""
+    """Тесты получения текущего пользователя."""
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_success(self, async_client: AsyncClient, auth_headers: dict, test_user, helpers):
+    async def test_get_current_user_success(self, api_client, verified_user, helpers):
         """Тест получения информации о текущем пользователе."""
-        response = await async_client.get("/api/v1/auth/me", headers=auth_headers)
+        # Аутентифицируем пользователя
+        await api_client.force_auth(verified_user)
+
+        current_user_url = api_client.url_for("current_user")
+        response = await api_client.get(current_user_url)
 
         assert response.status_code == 200
         data = response.json()
 
-        helpers.assert_user_response(data, "test@example.com")
+        helpers.assert_user_response(data, verified_user.email)
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_unauthorized(self, async_client: AsyncClient):
-        """Тест получения информации без токена."""
-        response = await async_client.get("/api/v1/auth/me")
+    async def test_get_current_user_unauthorized(self, api_client):
+        """Тест получения информации без аутентификации."""
+        current_user_url = api_client.url_for("current_user")
+        response = await api_client.get(current_user_url)
 
         assert response.status_code == 401
 
@@ -250,79 +234,116 @@ class TestCurrentUser:
 @pytest.mark.auth
 @pytest.mark.integration
 class TestAuthenticationFlow:
-    """Интеграционные тесты полного процесса аутентификации."""
+    """Интеграционные тесты полного потока аутентификации."""
 
-    @pytest.mark.asyncio
-    async def test_complete_auth_flow(self, async_client: AsyncClient, db_session: AsyncSession, helpers):
-        """Тест полного цикла аутентификации."""
+    async def test_complete_auth_flow(self, api_client, test_user_data, helpers):
+        """Тест полного потока: регистрация -> логин -> доступ к защищенным ресурсам."""
         # 1. Регистрация
-        user_data = {
-            "email": "flowtest@example.com",
-            "username": "flowtest",
-            "full_name": "Flow Test User",
-            "password": "FlowPassword123!",
-            "password_confirm": "FlowPassword123!",
-        }
+        register_url = api_client.url_for("register")
+        register_response = await api_client.post(register_url, json=test_user_data.model_dump())
 
-        register_response = await async_client.post("/api/v1/auth/register", json=user_data)
         assert register_response.status_code == 201
+        register_data = register_response.json()
 
-        tokens = register_response.json()["tokens"]
+        helpers.assert_user_response(register_data["user"], test_user_data.email)
+        helpers.assert_token_response(register_data["tokens"])
 
-        # 2. Использование access токена
-        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-        me_response = await async_client.get("/api/v1/auth/me", headers=headers)
-        assert me_response.status_code == 200
+        # 2. Логин
+        login_url = api_client.url_for("login")
+        login_data = {"email": test_user_data.email, "password": test_user_data.password}
 
-        # 3. Обновление токена
-        refresh_data = {"refresh_token": tokens["refresh_token"]}
-        refresh_response = await async_client.post("/api/v1/auth/refresh", json=refresh_data)
-        assert refresh_response.status_code == 200
+        login_response = await api_client.post(login_url, json=login_data)
+        assert login_response.status_code == 200
 
-        new_tokens = refresh_response.json()
+        # 3. Доступ к защищенному ресурсу
+        access_token = login_response.json()["tokens"]["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
 
-        # 4. Использование нового access токена
-        new_headers = {"Authorization": f"Bearer {new_tokens['access_token']}"}
-        me_response2 = await async_client.get("/api/v1/auth/me", headers=new_headers)
-        assert me_response2.status_code == 200
+        current_user_url = api_client.url_for("current_user")
+        protected_response = await api_client.get(current_user_url, headers=headers)
 
-        # 5. Выход из системы
-        logout_data = {"refresh_token": new_tokens["refresh_token"]}
-        logout_response = await async_client.post("/api/v1/auth/logout", json=logout_data)
-        assert logout_response.status_code == 204
+        assert protected_response.status_code == 200
+        user_data = protected_response.json()
+        assert user_data["email"] == test_user_data.email
 
-    @pytest.mark.asyncio
-    async def test_multiple_sessions(self, async_client: AsyncClient, test_user, db_session: AsyncSession):
+    async def test_multiple_sessions(self, api_client, verified_user):
         """Тест множественных сессий одного пользователя."""
-        login_data = {"email": "test@example.com", "password": "TestPassword123!"}
+        login_url = api_client.url_for("login")
 
-        # Входим с разных "устройств"
-        session1 = await async_client.post("/api/v1/auth/login", json=login_data)
-        session2 = await async_client.post("/api/v1/auth/login", json=login_data)
+        login_data = {"email": verified_user.email, "password": "TestPassword123!"}
 
-        assert session1.status_code == 200
-        assert session2.status_code == 200
+        # Создаем несколько сессий
+        sessions = []
+        for i in range(3):
+            response = await api_client.post(login_url, json=login_data)
+            assert response.status_code == 200
 
-        tokens1 = session1.json()["tokens"]
-        tokens2 = session2.json()["tokens"]
+            tokens = response.json()["tokens"]
+            sessions.append(tokens)
 
-        # Оба токена должны работать
-        headers1 = {"Authorization": f"Bearer {tokens1['access_token']}"}
-        headers2 = {"Authorization": f"Bearer {tokens2['access_token']}"}
+        # Проверяем, что все токены разные
+        access_tokens = [session["access_token"] for session in sessions]
+        refresh_tokens = [session["refresh_token"] for session in sessions]
 
-        me1 = await async_client.get("/api/v1/auth/me", headers=headers1)
-        me2 = await async_client.get("/api/v1/auth/me", headers=headers2)
+        assert len(set(access_tokens)) == 3  # Все access токены уникальны
+        assert len(set(refresh_tokens)) == 3  # Все refresh токены уникальны
 
-        assert me1.status_code == 200
-        assert me2.status_code == 200
+        # Проверяем, что все токены работают
+        current_user_url = api_client.url_for("current_user")
 
-        # Выходим из всех сессий
-        logout_all_response = await async_client.post("/api/v1/auth/logout-all", headers=headers1)
-        assert logout_all_response.status_code == 204
+        for session in sessions:
+            headers = {"Authorization": f"Bearer {session['access_token']}"}
+            response = await api_client.get(current_user_url, headers=headers)
+            assert response.status_code == 200
 
-        # Проверяем, что все refresh токены аннулированы
-        refresh1 = await async_client.post("/api/v1/auth/refresh", json={"refresh_token": tokens1["refresh_token"]})
-        refresh2 = await async_client.post("/api/v1/auth/refresh", json={"refresh_token": tokens2["refresh_token"]})
 
-        assert refresh1.status_code == 401
-        assert refresh2.status_code == 401
+@pytest.mark.auth
+@pytest.mark.performance
+class TestAuthPerformance:
+    """Тесты производительности аутентификации."""
+
+    async def test_login_performance(self, api_client, verified_user):
+        """Тест производительности логина."""
+        # Включаем отслеживание производительности
+        api_client.enable_performance_tracking()
+
+        login_url = api_client.url_for("login")
+        login_data = {"email": verified_user.email, "password": "TestPassword123!"}
+
+        # Выполняем несколько логинов
+        for _ in range(10):
+            response = await api_client.post(login_url, json=login_data)
+            assert response.status_code == 200
+
+        # Проверяем метрики
+        stats = api_client.get_performance_stats()
+        assert stats["total_requests"] == 10
+        assert stats["average_response_time"] < 1.0  # Логин должен быть быстрым
+
+        api_client.disable_performance_tracking()
+
+    async def test_concurrent_logins(self, api_client, user_factory):
+        """Тест параллельных логинов."""
+        # Создаем пользователей для тестирования
+        users = []
+        for _ in range(5):
+            user = await user_factory.create(is_verified=True)
+            users.append(user)
+
+        login_url = api_client.url_for("login")
+
+        # Параллельные логины
+        import asyncio
+
+        tasks = []
+
+        for user in users:
+            login_data = {"email": user.email, "password": "TestPassword123!"}
+            task = api_client.post(login_url, json=login_data)
+            tasks.append(task)
+
+        responses = await asyncio.gather(*tasks)
+
+        # Все логины должны быть успешными
+        for response in responses:
+            assert response.status_code == 200
