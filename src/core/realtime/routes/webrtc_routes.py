@@ -79,7 +79,7 @@ async def webrtc_signaling_websocket(websocket: WebSocket, room_id: str | None =
                 "type": "connection_info",
                 "peer_id": peer_id,
                 "room_id": room_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(tz=utc)().isoformat(),
             }
         )
 
@@ -101,7 +101,7 @@ async def webrtc_signaling_websocket(websocket: WebSocket, room_id: str | None =
                     {
                         "type": "error",
                         "message": f"Ошибка обработки сигнала: {e!s}",
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(tz=utc)().isoformat(),
                     }
                 )
 
@@ -133,7 +133,7 @@ async def handle_webrtc_signal_websocket(websocket: WebSocket, peer_id: str, dat
             {
                 "type": "error",
                 "message": f"Неизвестный тип сигнала: {signal_type}",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(tz=utc)().isoformat(),
             }
         )
 
@@ -142,7 +142,7 @@ async def handle_join_room_websocket(websocket: WebSocket, peer_id: str, room_id
     """Обработка входа в комнату через WebSocket."""
     if not room_id:
         await websocket.send_json(
-            {"type": "error", "message": "Не указан ID комнаты", "timestamp": datetime.utcnow().isoformat()}
+            {"type": "error", "message": "Не указан ID комнаты", "timestamp": datetime.now(tz=utc)().isoformat()}
         )
         return
 
@@ -155,7 +155,7 @@ async def handle_join_room_websocket(websocket: WebSocket, peer_id: str, room_id
     # Проверяем лимит участников
     if len(room.participants) >= room.max_participants:
         await websocket.send_json(
-            {"type": "error", "message": "Комната переполнена", "timestamp": datetime.utcnow().isoformat()}
+            {"type": "error", "message": "Комната переполнена", "timestamp": datetime.now(tz=utc)().isoformat()}
         )
         return
 
@@ -171,7 +171,7 @@ async def handle_join_room_websocket(websocket: WebSocket, peer_id: str, room_id
             "peer_id": peer_id,
             "participants": room.participants,
             "room_info": room.dict(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=utc)().isoformat(),
         }
     )
 
@@ -183,7 +183,7 @@ async def handle_join_room_websocket(websocket: WebSocket, peer_id: str, room_id
             "peer_id": peer_id,
             "room_id": room_id,
             "participants": room.participants,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=utc)().isoformat(),
         },
         exclude_peer=peer_id,
     )
@@ -193,7 +193,7 @@ async def handle_leave_room_websocket(websocket: WebSocket, peer_id: str, room_i
     """Обработка выхода из комнаты через WebSocket."""
     if room_id not in webrtc_rooms:
         await websocket.send_json(
-            {"type": "error", "message": "Комната не найдена", "timestamp": datetime.utcnow().isoformat()}
+            {"type": "error", "message": "Комната не найдена", "timestamp": datetime.now(tz=utc)().isoformat()}
         )
         return
 
@@ -210,7 +210,7 @@ async def handle_leave_room_websocket(websocket: WebSocket, peer_id: str, room_i
             "room_id": room_id,
             "peer_id": peer_id,
             "participants": room.participants,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=utc)().isoformat(),
         }
     )
 
@@ -222,7 +222,7 @@ async def handle_leave_room_websocket(websocket: WebSocket, peer_id: str, room_i
             "peer_id": peer_id,
             "room_id": room_id,
             "participants": room.participants,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=utc)().isoformat(),
         },
         exclude_peer=peer_id,
     )
@@ -237,7 +237,7 @@ async def handle_peer_signal_websocket(websocket: WebSocket, peer_id: str, data:
     target_peer_id = data.get("target_peer_id")
     if not target_peer_id:
         await websocket.send_json(
-            {"type": "error", "message": "Не указан целевой пир", "timestamp": datetime.utcnow().isoformat()}
+            {"type": "error", "message": "Не указан целевой пир", "timestamp": datetime.now(tz=utc)().isoformat()}
         )
         return
 
@@ -250,7 +250,7 @@ async def handle_peer_signal_websocket(websocket: WebSocket, peer_id: str, data:
 
     # Обновляем состояние соединения
     connection = peer_connections[connection_key]
-    connection.last_activity = datetime.utcnow()
+    connection.last_activity = datetime.now(tz=utc)()
 
     if data.get("connection_state"):
         connection.connection_state = data["connection_state"]
@@ -269,7 +269,7 @@ async def handle_peer_signal_websocket(websocket: WebSocket, peer_id: str, data:
         "connection_state": data.get("connection_state"),
         "gathering_state": data.get("gathering_state"),
         "metadata": data.get("metadata"),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(tz=utc)().isoformat(),
     }
 
     # Находим целевого пира и отправляем сигнал
@@ -284,12 +284,12 @@ async def handle_peer_signal_websocket(websocket: WebSocket, peer_id: str, data:
                 "type": "signal_delivered",
                 "signal_type": data["signal_type"],
                 "target_peer_id": target_peer_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(tz=utc)().isoformat(),
             }
         )
     else:
         await websocket.send_json(
-            {"type": "error", "message": f"Пир {target_peer_id} не найден", "timestamp": datetime.utcnow().isoformat()}
+            {"type": "error", "message": f"Пир {target_peer_id} не найден", "timestamp": datetime.now(tz=utc)().isoformat()}
         )
 
 
@@ -325,7 +325,7 @@ async def cleanup_peer(peer_id: str):
                     "peer_id": peer_id,
                     "room_id": room_id,
                     "participants": room.participants,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(tz=utc)().isoformat(),
                 },
                 exclude_peer=peer_id,
             )
@@ -439,7 +439,7 @@ async def update_webrtc_room(room_id: str, request: UpdateRoomSettingsRequest, a
             "type": "room_updated",
             "room_id": room_id,
             "room_info": room.dict(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=utc)().isoformat(),
         },
     )
 
@@ -460,7 +460,7 @@ async def delete_webrtc_room(room_id: str, auth_data=Depends(optional_auth)):
 
     # Уведомляем участников
     await broadcast_to_room(
-        room_id, {"type": "room_deleted", "room_id": room_id, "timestamp": datetime.utcnow().isoformat()}
+        room_id, {"type": "room_deleted", "room_id": room_id, "timestamp": datetime.now(tz=utc)().isoformat()}
     )
 
     # Удаляем связанные peer connections
@@ -545,5 +545,5 @@ async def webrtc_health():
         "rooms_count": len(webrtc_rooms),
         "connections_count": len(peer_connections),
         "total_participants": sum(len(room.participants) for room in webrtc_rooms.values()),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(tz=utc)().isoformat(),
     }

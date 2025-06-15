@@ -54,7 +54,7 @@ class BaseMessage(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     type: MessageType
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc))
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -183,7 +183,7 @@ class WSResponse(BaseModel):
     message: str | None = None
     data: dict[str, Any] | None = None
     error_code: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc))
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -266,8 +266,8 @@ class WebRTCPeerConnection(BaseModel):
     ice_gathering_state: str = "new"
     ice_connection_state: str = "new"
     signaling_state: str = "stable"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    last_activity: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now(tz=utc))
+    last_activity: datetime = Field(default_factory=datetime.now(tz=utc))
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
@@ -280,7 +280,7 @@ class WebRTCRoom(BaseModel):
     name: str | None = None
     max_participants: int = 10
     participants: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.now(tz=utc))
     created_by: str | None = None
     settings: dict[str, Any] | None = None
 

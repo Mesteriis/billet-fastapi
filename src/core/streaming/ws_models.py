@@ -38,7 +38,7 @@ class WSMessage(BaseModel):
     id: str = Field(..., description="Уникальный ID сообщения")
     type: MessageType = Field(default=MessageType.TEXT, description="Тип сообщения")
     content: str | dict[str, Any] = Field(..., description="Содержимое сообщения")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время создания")
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc), description="Время создания")
     sender_id: str | None = Field(None, description="ID отправителя")
     recipient_id: str | None = Field(None, description="ID получателя")
     channel: str | None = Field(None, description="Канал сообщения")
@@ -55,7 +55,7 @@ class SSEMessage(BaseModel):
     event: str = Field(default="message", description="Тип события")
     data: str | dict[str, Any] = Field(..., description="Данные события")
     retry: int | None = Field(None, description="Время повтора в миллисекундах")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время создания")
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc), description="Время создания")
 
     def to_sse_format(self) -> str:
         """Преобразование в формат SSE."""
@@ -95,8 +95,8 @@ class WSConnectionInfo(BaseModel):
     connection_id: str = Field(..., description="ID соединения")
     user_id: str | None = Field(None, description="ID пользователя")
     status: SSEConnectionStatus = Field(default=SSEConnectionStatus.CONNECTING, description="Статус соединения")
-    connected_at: datetime = Field(default_factory=datetime.utcnow, description="Время подключения")
-    last_activity: datetime = Field(default_factory=datetime.utcnow, description="Последняя активность")
+    connected_at: datetime = Field(default_factory=datetime.now(tz=utc), description="Время подключения")
+    last_activity: datetime = Field(default_factory=datetime.now(tz=utc), description="Последняя активность")
     channels: list[str] = Field(default_factory=list, description="Подписанные каналы")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Метаданные соединения")
     ip_address: str | None = Field(None, description="IP адрес клиента")
@@ -109,7 +109,7 @@ class WSSubscription(BaseModel):
     connection_id: str = Field(..., description="ID соединения")
     channel: str = Field(..., description="Название канала")
     filters: dict[str, Any] = Field(default_factory=dict, description="Фильтры сообщений")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Время создания подписки")
+    created_at: datetime = Field(default_factory=datetime.now(tz=utc), description="Время создания подписки")
 
 
 class WSCommand(BaseModel):
@@ -161,8 +161,8 @@ class NotificationMessage(BaseModel):
 class HeartbeatMessage(BaseModel):
     """Сообщение heartbeat."""
 
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время отправки")
-    server_time: str = Field(default_factory=lambda: datetime.utcnow().isoformat(), description="Время сервера")
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc), description="Время отправки")
+    server_time: str = Field(default_factory=lambda: datetime.now(tz=utc)().isoformat(), description="Время сервера")
 
 
 class SystemMessage(BaseModel):

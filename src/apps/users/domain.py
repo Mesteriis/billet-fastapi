@@ -131,19 +131,19 @@ class UserDomain(BaseModel):
         """Активировать пользователя."""
         self.is_active = True
         self.status = "active"
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
     
     def deactivate(self) -> None:
         """Деактивировать пользователя."""
         self.is_active = False
         self.status = "inactive"
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
     
     def suspend(self, reason: str | None = None) -> None:
         """Заблокировать пользователя."""
         self.is_active = False
         self.status = "suspended"
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
         # TODO: логирование причины блокировки
     
     def verify_email(self) -> None:
@@ -151,12 +151,12 @@ class UserDomain(BaseModel):
         self.is_verified = True
         if self.status == "pending_verification":
             self.status = "active"
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
     
     def update_last_login(self) -> None:
         """Обновить время последнего входа."""
-        self.last_login_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.last_login_at = datetime.now(tz=utc)()
+        self.updated_at = datetime.now(tz=utc)()
     
     def change_role(self, new_role: UserRole) -> None:
         """Изменить роль пользователя."""
@@ -166,7 +166,7 @@ class UserDomain(BaseModel):
         self.role = new_role
         if new_role == "admin":
             self.is_superuser = True
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
     
     def update_profile(
         self,
@@ -195,7 +195,7 @@ class UserDomain(BaseModel):
         if avatar_url is not None:
             self.avatar_url = avatar_url
         
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(tz=utc)()
     
     @staticmethod
     def _is_valid_phone(phone: str) -> bool:
@@ -223,7 +223,7 @@ class UserEvent(BaseModel):
     
     user_id: uuid.UUID
     event_type: str
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = datetime.now(tz=utc)()
     metadata: dict[str, str] = {}
 
 

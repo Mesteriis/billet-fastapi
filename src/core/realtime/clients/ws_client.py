@@ -221,7 +221,7 @@ class WSClient:
         """Отправка ping команды."""
         try:
             response = await self.send_command("ping", timeout=5)
-            self.last_ping = datetime.utcnow()
+            self.last_ping = datetime.now(tz=utc)()
             return response.success
         except Exception as e:
             logger.error(f"Ping failed: {e}")

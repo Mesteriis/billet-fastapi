@@ -133,7 +133,7 @@ class ConnectionManager:
 
             # Обновляем последнюю активность
             if connection_id in self.ws_connection_info:
-                self.ws_connection_info[connection_id].last_activity = datetime.utcnow()
+                self.ws_connection_info[connection_id].last_activity = datetime.now(tz=utc)()
 
             return True
         except Exception as e:
@@ -217,7 +217,7 @@ class ConnectionManager:
 
             # Обновляем последнюю активность
             if connection_id in self.sse_connection_info:
-                self.sse_connection_info[connection_id].last_activity = datetime.utcnow()
+                self.sse_connection_info[connection_id].last_activity = datetime.now(tz=utc)()
 
             return True
         except asyncio.QueueFull:
@@ -374,7 +374,7 @@ class ConnectionManager:
 
     async def cleanup_inactive_connections(self):
         """Очистка неактивных соединений."""
-        cutoff_time = datetime.utcnow() - timedelta(seconds=self.settings.WEBSOCKET_DISCONNECT_TIMEOUT)
+        cutoff_time = datetime.now(tz=utc)() - timedelta(seconds=self.settings.WEBSOCKET_DISCONNECT_TIMEOUT)
 
         # Проверяем WebSocket соединения
         inactive_ws = [conn_id for conn_id, info in self.ws_connection_info.items() if info.last_activity < cutoff_time]

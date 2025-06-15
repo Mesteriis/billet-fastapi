@@ -27,13 +27,13 @@ class JWTToken(BaseModel):
     
     def is_expired(self) -> bool:
         """Проверить, истек ли токен."""
-        return datetime.utcnow() >= self.expires_at
+        return datetime.now(tz=utc)() >= self.expires_at
     
     def expires_in_seconds(self) -> int:
         """Получить время до истечения в секундах."""
         if self.is_expired():
             return 0
-        return int((self.expires_at - datetime.utcnow()).total_seconds())
+        return int((self.expires_at - datetime.now(tz=utc)()).total_seconds())
     
     def expires_in_minutes(self) -> int:
         """Получить время до истечения в минутах."""
@@ -92,16 +92,16 @@ class UserSession(BaseModel):
     
     def is_expired(self) -> bool:
         """Проверить, истекла ли сессия."""
-        return datetime.utcnow() >= self.expires_at
+        return datetime.now(tz=utc)() >= self.expires_at
     
     def revoke(self, reason: str = "user_logout") -> None:
         """Отозвать сессию."""
         self.status = "revoked"
-        self.revoked_at = datetime.utcnow()
+        self.revoked_at = datetime.now(tz=utc)()
     
     def update_activity(self) -> None:
         """Обновить время последней активности."""
-        self.last_activity_at = datetime.utcnow()
+        self.last_activity_at = datetime.now(tz=utc)()
     
     def extend_expiry(self, extend_by: timedelta) -> None:
         """Продлить время жизни сессии."""
@@ -115,7 +115,7 @@ class UserSession(BaseModel):
         # 2. Смена IP адреса (требует дополнительных данных)
         
         if self.last_activity_at:
-            inactive_hours = (datetime.utcnow() - self.last_activity_at).total_seconds() / 3600
+            inactive_hours = (datetime.now(tz=utc)() - self.last_activity_at).total_seconds() / 3600
             return inactive_hours > 24
         
         return False
@@ -128,7 +128,7 @@ class AuthEvent(BaseModel):
     user_id: uuid.UUID
     session_id: uuid.UUID | None = None
     event_type: str
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = datetime.now(tz=utc)()
     ip_address: str | None = None
     user_agent: str | None = None
     metadata: dict[str, str] = {}
@@ -186,7 +186,7 @@ class AuthDomainService:
         if failed_attempts >= 5:
             if last_failed_at:
                 lockout_period = timedelta(minutes=15)
-                if datetime.utcnow() - last_failed_at < lockout_period:
+                if datetime.now(tz=utc)() - last_failed_at < lockout_period:
                     raise UnauthorizedError("Account temporarily locked due to multiple failed attempts")
         
         # Базовая валидация
@@ -212,7 +212,7 @@ class AuthDomainService:
         if remember_me and device_type in ("web", "desktop"):
             expiry_delta = timedelta(days=30)
         
-        return datetime.utcnow() + expiry_delta
+        return datetime.now(tz=utc)() + expiry_delta
     
     @staticmethod
     def should_require_2fa(
@@ -269,9 +269,9 @@ class AuthDomainService:
     def calculate_token_expiry(token_type: Literal["access", "refresh"]) -> datetime:
         """Рассчитать время истечения токена."""
         if token_type == "access":
-            return datetime.utcnow() + timedelta(minutes=30)
+            return datetime.now(tz=utc)() + timedelta(minutes=30)
         elif token_type == "refresh":
-            return datetime.utcnow() + timedelta(days=30)
+            return datetime.now(tz=utc)() + timedelta(days=30)
         else:
             raise ValueError(f"Unknown token type: {token_type}")
     

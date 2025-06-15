@@ -124,7 +124,7 @@ class ConnectionManager:
 
             # Обновляем последнюю активность
             if connection_id in self.ws_connection_info:
-                self.ws_connection_info[connection_id].last_activity = datetime.utcnow()
+                self.ws_connection_info[connection_id].last_activity = datetime.now(tz=utc)()
 
             return True
         except Exception as e:
@@ -208,7 +208,7 @@ class ConnectionManager:
 
             # Обновляем последнюю активность
             if connection_id in self.sse_connection_info:
-                self.sse_connection_info[connection_id].last_activity = datetime.utcnow()
+                self.sse_connection_info[connection_id].last_activity = datetime.now(tz=utc)()
 
             return True
         except asyncio.QueueFull:
@@ -313,7 +313,7 @@ class ConnectionManager:
 
                 heartbeat_message = WSMessage(
                     type=MessageType.HEARTBEAT,
-                    data={"timestamp": datetime.utcnow().isoformat()},
+                    data={"timestamp": datetime.now(tz=utc)().isoformat()},
                 )
 
                 success = await self.send_to_websocket(connection_id, heartbeat_message)
@@ -338,7 +338,7 @@ class ConnectionManager:
 
                 heartbeat_message = SSEMessage(
                     event="heartbeat",
-                    data={"timestamp": datetime.utcnow().isoformat()},
+                    data={"timestamp": datetime.now(tz=utc)().isoformat()},
                 )
 
                 success = await self.send_to_sse(connection_id, heartbeat_message)
@@ -379,7 +379,7 @@ class ConnectionManager:
 
     async def cleanup_inactive_connections(self) -> int:
         """Очистка неактивных соединений."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(tz=utc)()
         inactive_connections = []
 
         # Проверяем WebSocket соединения

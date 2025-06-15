@@ -17,7 +17,7 @@ class MessageModel(BaseModel, Generic[PayloadType]):
     id: str = Field(default_factory=lambda: str(uuid4()), description="Уникальный идентификатор сообщения")
     type: str = Field(description="Тип сообщения")
     payload: PayloadType = Field(description="Данные сообщения")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время создания сообщения")
+    timestamp: datetime = Field(default_factory=datetime.now(tz=utc), description="Время создания сообщения")
     source: str = Field(description="Источник сообщения")
     correlation_id: str | None = Field(default=None, description="ID для корреляции сообщений")
     reply_to: str | None = Field(default=None, description="Очередь для ответа")

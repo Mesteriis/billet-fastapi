@@ -56,9 +56,9 @@ class User(BaseEntity):
 
     def verify_email(self) -> None:
         """Верификация email пользователя."""
-        self.email_verified_at = datetime.utcnow()
+        self.email_verified_at = datetime.now(tz=utc)()
         self.is_verified = True
 
     def update_last_login(self) -> None:
         """Обновление времени последнего входа."""
-        self.last_login_at = datetime.utcnow()
+        self.last_login_at = datetime.now(tz=utc)()

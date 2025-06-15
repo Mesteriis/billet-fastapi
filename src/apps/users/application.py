@@ -135,8 +135,8 @@ class UserApplicationService:
             username=username,
             full_name=request.full_name.strip(),
             phone=request.phone,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(tz=utc)(),
+            updated_at=datetime.now(tz=utc)(),
         )
 
         # Если создается админом, сразу верифицируем

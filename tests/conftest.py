@@ -37,26 +37,6 @@ def temp_dir():
 
 
 @pytest.fixture(scope="function")
-def sync_engine():
-    """Синхронный SQLite движок для тестов."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-        echo=False,
-    )
-
-    # Создаем все таблицы
-    BaseModel.metadata.create_all(engine)
-
-    yield engine
-
-    # Очистка
-    BaseModel.metadata.drop_all(engine)
-    engine.dispose()
-
-
-@pytest.fixture(scope="function")
 async def async_engine():
     """Асинхронный SQLite движок для тестов."""
     engine = create_async_engine(

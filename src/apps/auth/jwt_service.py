@@ -72,11 +72,11 @@ class JWTService:
             span.set_attribute("token.type", "access")
 
             if expires_delta:
-                expire = datetime.utcnow() + expires_delta
+                expire = datetime.now(tz=utc)() + expires_delta
             else:
-                expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+                expire = datetime.now(tz=utc)() + timedelta(minutes=self.access_token_expire_minutes)
 
-            now = datetime.utcnow()
+            now = datetime.now(tz=utc)()
 
             claims = JWTClaims(
                 sub=user_id,
@@ -126,11 +126,11 @@ class JWTService:
             span.set_attribute("token.type", "refresh")
 
             if expires_delta:
-                expire = datetime.utcnow() + expires_delta
+                expire = datetime.now(tz=utc)() + expires_delta
             else:
-                expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+                expire = datetime.now(tz=utc)() + timedelta(days=self.refresh_token_expire_days)
 
-            now = datetime.utcnow()
+            now = datetime.now(tz=utc)()
             jti = str(uuid.uuid4())
 
             claims = JWTClaims(
@@ -180,7 +180,7 @@ class JWTService:
                     return None
 
                 # Проверяем срок действия
-                if datetime.utcnow().timestamp() > claims.exp:
+                if datetime.now(tz=utc)().timestamp() > claims.exp:
                     span.set_attribute("error", "Token expired")
                     return None
 
@@ -255,7 +255,7 @@ class JWTService:
         Returns:
             Время истечения
         """
-        now = datetime.utcnow()
+        now = datetime.now(tz=utc)()
         if token_type == "access":
             return now + timedelta(minutes=self.access_token_expire_minutes)
         elif token_type == "refresh":

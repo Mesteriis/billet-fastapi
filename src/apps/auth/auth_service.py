@@ -82,7 +82,7 @@ class AuthService:
 
             if auto_verify:
                 user_dict["is_verified"] = True
-                user_dict["email_verified_at"] = datetime.utcnow()
+                user_dict["email_verified_at"] = datetime.now(tz=utc)()
 
             user = await self.user_repository.create(db, obj_in=user_dict)
             await db.commit()

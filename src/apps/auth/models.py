@@ -54,7 +54,7 @@ class RefreshToken(BaseEntity):
     @property
     def is_expired(self) -> bool:
         """Проверка истечения токена."""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(tz=utc)() > self.expires_at
 
     @property
     def is_valid(self) -> bool:

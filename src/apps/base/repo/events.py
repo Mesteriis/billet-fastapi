@@ -11,6 +11,7 @@ from typing import Any, Generic, TypeVar
 
 from opentelemetry import trace
 from pydantic import BaseModel, Field
+from pytz import utc
 
 # Получаем tracer для отслеживания событий
 tracer = trace.get_tracer(__name__)
@@ -22,7 +23,7 @@ class BaseEvent(BaseModel, ABC, Generic[T]):
     """Базовое событие системы."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda : datetime.now(tz=utc))
     event_type: str = Field(...)
     source: str = Field(default="system")
     version: str = Field(default="1.0")
