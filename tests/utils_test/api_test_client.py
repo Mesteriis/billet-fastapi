@@ -23,6 +23,7 @@ import httpx
 import websockets
 from fastapi import FastAPI
 from httpx import AsyncClient, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # from apps.auth.jwt_service import JWTService
 # from apps.users.models import User
@@ -292,7 +293,7 @@ class AsyncApiTestClient(AsyncClient):
     - Тестовые сценарии и сессии
     """
 
-    def __init__(self, app: Optional[FastAPI] = None, **kwargs):
+    def __init__(self, app: FastAPI, db: AsyncSession, **kwargs):
         """
         Инициализация тестового клиента.
 
@@ -301,8 +302,9 @@ class AsyncApiTestClient(AsyncClient):
             **kwargs: Дополнительные параметры для httpx.AsyncClient
         """
         self._app = app
+        self.db_session: AsyncSession = db
+
         self.auth_user: Optional["User"] = None
-        # Создаем тестовый JWT сервис с правильными настройками
         self._jwt_service = self._create_test_jwt_service()
         self._cached_routes: Optional[list[str]] = None
         self._performance_tracking = False
@@ -311,8 +313,6 @@ class AsyncApiTestClient(AsyncClient):
         self._mock_external = MockExternal()
         self._current_session: Optional[TestSession] = None
         self._websocket_connections: Dict[str, Any] = {}
-        # Async сессия БД (будет установлена в фикстуре)
-        self.db_session: Optional[Any] = None
         # Новые атрибуты для расширенной функциональности
         self._websocket_sessions: Dict[str, WebSocketTestSession] = {}
         self._security_test_results: List[SecurityTestResult] = []
@@ -322,7 +322,7 @@ class AsyncApiTestClient(AsyncClient):
         self._security_payloads: Dict[SecurityTestType, List[str]] = self._init_security_payloads()
         # Простой трекер производительности
         self.performance_tracker = self._create_performance_tracker()
-        super().__init__(**kwargs)
+        super().__init__(base_url="http://test", **kwargs)
 
         # Настраиваем зависимости для тестов
         if self._app:
@@ -407,7 +407,7 @@ class AsyncApiTestClient(AsyncClient):
         return routes
 
     def _find_similar_routes(
-        self, target: str, available_routes: list[str], min_similarity: float = 0.3
+            self, target: str, available_routes: list[str], min_similarity: float = 0.3
     ) -> list[tuple[str, float]]:
         """
         Найти похожие routes используя алгоритм диффа.
@@ -443,13 +443,13 @@ class AsyncApiTestClient(AsyncClient):
         return sorted(similarities, key=lambda x: x[1], reverse=True)
 
     async def force_auth(
-        self,
-        user: Optional["User"] = None,
-        email: Optional[str] = None,
-        email_verified: bool = True,
-        is_superuser: bool = False,
-        is_active: bool = True,
-        **user_kwargs: Any,
+            self,
+            user: Optional["User"] = None,
+            email: Optional[str] = None,
+            email_verified: bool = True,
+            is_superuser: bool = False,
+            is_active: bool = True,
+            **user_kwargs: Any,
     ) -> "User":
         """
         Принудительная аутентификация пользователя с гибкими опциями.
@@ -569,7 +569,7 @@ class AsyncApiTestClient(AsyncClient):
 
     @staticmethod
     async def _generate_user(
-        is_superuser: bool = False, is_active: bool = True, is_email_verified: bool = True, **kwargs: Any
+            is_superuser: bool = False, is_active: bool = True, is_email_verified: bool = True, **kwargs: Any
     ) -> "User":
         """
         Генерация тестового пользователя.
@@ -618,15 +618,15 @@ class AsyncApiTestClient(AsyncClient):
         }
 
     async def request_with_retry(
-        self,
-        method: str,
-        url: str,
-        max_retries: int = 3,
-        retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
-        base_delay: float = 1.0,
-        max_delay: float = 60.0,
-        retryable_status_codes: Optional[List[int]] = None,
-        **kwargs,
+            self,
+            method: str,
+            url: str,
+            max_retries: int = 3,
+            retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
+            base_delay: float = 1.0,
+            max_delay: float = 60.0,
+            retryable_status_codes: Optional[List[int]] = None,
+            **kwargs,
     ) -> Response:
         """
         Выполнить запрос с retry логикой.
@@ -677,13 +677,13 @@ class AsyncApiTestClient(AsyncClient):
         raise RuntimeError("Retry logic error: no response or exception")
 
     def _calculate_retry_delay(
-        self, attempt: int, strategy: RetryStrategy, base_delay: float, max_delay: float
+            self, attempt: int, strategy: RetryStrategy, base_delay: float, max_delay: float
     ) -> float:
         """Вычислить задержку для retry."""
         if strategy == RetryStrategy.LINEAR:
             delay = base_delay * (attempt + 1)
         elif strategy == RetryStrategy.EXPONENTIAL:
-            delay = base_delay * (2**attempt)
+            delay = base_delay * (2 ** attempt)
         elif strategy == RetryStrategy.FIBONACCI:
             # Простая последовательность Фибоначчи
             fib = [1, 1]
@@ -702,7 +702,7 @@ class AsyncApiTestClient(AsyncClient):
         logger.info(f"API snapshots directory: {self._snapshots_dir}")
 
     async def create_api_snapshot(
-        self, endpoint: str, method: str = "GET", save_to_file: bool = True, **request_kwargs
+            self, endpoint: str, method: str = "GET", save_to_file: bool = True, **request_kwargs
     ) -> APISnapshot:
         """
         Создать снимок API endpoint для тестов регрессии.
@@ -903,7 +903,7 @@ class AsyncApiTestClient(AsyncClient):
         return responses
 
     async def authenticated_request(
-        self, method: str, url: str, auth_user: Optional["User"] = None, **kwargs: Any
+            self, method: str, url: str, auth_user: Optional["User"] = None, **kwargs: Any
     ) -> Response:
         """
         Выполнить аутентифицированный запрос.
@@ -942,11 +942,9 @@ class AsyncApiTestClient(AsyncClient):
                 raise ValueError("Не указан пользователь для аутентификации и нет текущего пользователя")
             return await self.request(method, url, **kwargs)
 
-
     def clear_cache(self) -> None:
         """Очистить кеш routes (полезно при динамическом изменении роутов)."""
         self._cached_routes = None
-
 
     def is_authenticated(self) -> bool:
         """Проверить, аутентифицирован ли пользователь."""
@@ -2006,7 +2004,7 @@ class AsyncApiTestClient(AsyncClient):
             raise
 
     def _analyze_load_test_results(
-        self, config: LoadTestConfig, responses: List[Response], errors: List[str], start_time: float
+            self, config: LoadTestConfig, responses: List[Response], errors: List[str], start_time: float
     ) -> LoadTestResult:
         """Анализ результатов нагрузочного тестирования."""
         end_time = time.time()
@@ -2354,7 +2352,7 @@ class AsyncApiTestClient(AsyncClient):
             return {"data": self._generate_value_by_type(schema.get("type", "string"))}
 
     def _generate_test_code(
-        self, endpoint: OpenAPIEndpoint, test_data: Dict[str, Any], expected_status: int, test_type: str
+            self, endpoint: OpenAPIEndpoint, test_data: Dict[str, Any], expected_status: int, test_type: str
     ) -> str:
         """Генерация кода теста."""
         method = endpoint.method.lower()

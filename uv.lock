@@ -464,11 +464,12 @@ dev = [
     { name = "pytest-httpx" },
     { name = "pytest-json-report" },
     { name = "pytest-mock" },
-    { name = "pytest-mock-resources" },
+    { name = "pytest-mock-resources", extra = ["postgres-async", "redis"] },
     { name = "pytest-rabbitmq" },
     { name = "pytest-sugar" },
     { name = "pytest-watch" },
     { name = "pytest-xdist" },
+    { name = "python-on-whales" },
     { name = "responses" },
     { name = "respx" },
     { name = "rich" },
@@ -538,11 +539,12 @@ dev = [
     { name = "pytest-httpx", specifier = ">=0.35.0" },
     { name = "pytest-json-report", specifier = ">=1.5.0" },
     { name = "pytest-mock", specifier = ">=3.14.1" },
-    { name = "pytest-mock-resources", specifier = ">=2.12.2" },
+    { name = "pytest-mock-resources", extras = ["postgres-async", "redis"], specifier = ">=2.12.2" },
     { name = "pytest-rabbitmq", specifier = ">=3.1.1" },
     { name = "pytest-sugar", specifier = ">=1.0.0" },
     { name = "pytest-watch", specifier = ">=4.2.0" },
     { name = "pytest-xdist", specifier = ">=3.7.0" },
+    { name = "python-on-whales", specifier = ">=0.77.0" },
     { name = "responses", specifier = ">=0.25.7" },
     { name = "respx", specifier = ">=0.22.0" },
     { name = "rich", specifier = ">=13.0.0" },
@@ -2412,6 +2414,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/3d/0a66566d1df4f8515c51102b42986bb88181706faf3b6d7de8bf064e0e86/pytest_mock_resources-2.12.2-py3-none-any.whl", hash = "sha256:2077c0ee799b13438722cf86f64dd0c45b63ff924908be30d29e031c373111e1", size = 58810 },
 ]
 
+[package.optional-dependencies]
+postgres-async = [
+    { name = "asyncpg" },
+    { name = "filelock" },
+    { name = "python-on-whales" },
+]
+redis = [
+    { name = "filelock" },
+    { name = "python-on-whales" },
+    { name = "redis" },
+]
+
 [[package]]
 name = "pytest-rabbitmq"
 version = "3.1.1"
@@ -2482,6 +2496,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/87/f44d7c9f274c7ee665a29b885ec97089ec5dc034c7f3fafa03da9e39a09e/python_multipart-0.0.20.tar.gz", hash = "sha256:8dd0cab45b8e23064ae09147625994d090fa46f5b0d1e13af944c331a7fa9d13", size = 37158 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/45/58/38b5afbc1a800eeea951b9285d3912613f2603bdf897a4ab0f4bd7f405fc/python_multipart-0.0.20-py3-none-any.whl", hash = "sha256:8a62d3a8335e06589fe01f2a3e178cdcc632f3fbe0d492ad9ee0ec35aab1f104", size = 24546 },
+]
+
+[[package]]
+name = "python-on-whales"
+version = "0.77.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/d4/a1e365c84dab848b3c87ed8f41713261d760a7ba90b522952dadb4897315/python_on_whales-0.77.0.tar.gz", hash = "sha256:fc5f45c7cab9d545a6a47abe9e0fb70b26f852c18c777f308f646f84fb7dce78", size = 112744 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/1c/7f23e555313c6c404fee3030d671d4363c5037bc807bd41295d29c8e09d0/python_on_whales-0.77.0-py3-none-any.whl", hash = "sha256:de3e1f6360bd64a2d71643b615ae505e9b4672cd0903e90a674f18fd6842c2ed", size = 117180 },
 ]
 
 [[package]]

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from .modesl_for_test import (
     TestUser,
     TestProfile,
@@ -11,47 +14,38 @@ from .modesl_for_test import (
     post_tags_table,
 )
 from core.base.repo import BaseRepository
+from core.base.models import BaseModel
 
+from contextlib import asynccontextmanager
 
-@pytest.fixture(scope="module", autouse=True)
+@asynccontextmanager
 async def create_models_for_test(async_session):
-    engine = async_session.get_bind()
-
-    from core.base.models import BaseModel  # или как у тебя называется Base
+    engine: AsyncEngine = async_session.bind
+    tables = [
+        TestUser.__table__,
+        TestProfile.__table__,
+        TestCategory.__table__,
+        TestPost.__table__,
+        TestTag.__table__,
+        TestComment.__table__,
+        post_tags_table
+    ]
 
     async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda: BaseModel.metadata.create_all(
-                engine,
-                tables=[
-                    TestUser.__table__,
-                    TestProfile.__table__,
-                    TestCategory.__table__,
-                    TestPost.__table__,
-                    TestTag.__table__,
-                    TestComment.__table__,
-                    post_tags_table
-                ]),
-            checkfirst=True,
-        )
+        await conn.run_sync(lambda sync_conn: BaseModel.metadata.create_all(
+            bind=sync_conn, tables=tables, checkfirst=True))
 
-    yield
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            lambda: BaseModel.metadata.drop_all(
-                engine,
-                tables=[
-                    TestUser.__table__,
-                    TestProfile.__table__,
-                    TestCategory.__table__,
-                    TestPost.__table__,
-                    TestTag.__table__,
-                    TestComment.__table__,
-                    post_tags_table
-                ]),
-            checkfirst=True
-        )
+    try:
+        yield
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda sync_conn: BaseModel.metadata.drop_all(
+                bind=sync_conn, tables=tables, checkfirst=True))
 
+@pytest_asyncio.fixture(scope="module", autouse=True)
+async def setup_test_models(async_session):
+    async with create_models_for_test(async_session):
+        yield
 
 @pytest.fixture
 def user_factory(async_session):

@@ -10,7 +10,7 @@ from sqlalchemy import (
     Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text,
     Index, CheckConstraint, Table, Column
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import TSVECTOR, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base.models import BaseModel
@@ -99,8 +99,8 @@ class TestPost(BaseModel):
     allow_comments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # JSON поля для тестирования JSON операторов
-    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    seo_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    seo_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Полнотекстовый поиск
     search_vector: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
