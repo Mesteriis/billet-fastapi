@@ -9,28 +9,23 @@ import json
 import logging
 import random
 import re
-import string
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, Union
-from urllib.parse import urljoin, urlparse
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import httpx
 import websockets
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from httpx import AsyncClient, Response
-from pydantic import BaseModel, ValidationError
-from tests.factories.user_factory import UserFactory
-from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from apps.auth.jwt_service import JWTService
-from apps.users.models import User
+# from apps.auth.jwt_service import JWTService
+# from apps.users.models import User
 
 # Импортируем конфигурацию логирования
 try:
@@ -306,7 +301,7 @@ class AsyncApiTestClient(AsyncClient):
             **kwargs: Дополнительные параметры для httpx.AsyncClient
         """
         self._app = app
-        self.auth_user: Optional[User] = None
+        self.auth_user: Optional["User"] = None
         # Создаем тестовый JWT сервис с правильными настройками
         self._jwt_service = self._create_test_jwt_service()
         self._cached_routes: Optional[list[str]] = None
@@ -449,13 +444,13 @@ class AsyncApiTestClient(AsyncClient):
 
     async def force_auth(
         self,
-        user: Optional[User] = None,
+        user: Optional["User"] = None,
         email: Optional[str] = None,
         email_verified: bool = True,
         is_superuser: bool = False,
         is_active: bool = True,
         **user_kwargs: Any,
-    ) -> User:
+    ) -> "User":
         """
         Принудительная аутентификация пользователя с гибкими опциями.
 
@@ -575,7 +570,7 @@ class AsyncApiTestClient(AsyncClient):
     @staticmethod
     async def _generate_user(
         is_superuser: bool = False, is_active: bool = True, is_email_verified: bool = True, **kwargs: Any
-    ) -> User:
+    ) -> "User":
         """
         Генерация тестового пользователя.
 
@@ -908,7 +903,7 @@ class AsyncApiTestClient(AsyncClient):
         return responses
 
     async def authenticated_request(
-        self, method: str, url: str, auth_user: Optional[User] = None, **kwargs: Any
+        self, method: str, url: str, auth_user: Optional["User"] = None, **kwargs: Any
     ) -> Response:
         """
         Выполнить аутентифицированный запрос.
@@ -947,37 +942,15 @@ class AsyncApiTestClient(AsyncClient):
                 raise ValueError("Не указан пользователь для аутентификации и нет текущего пользователя")
             return await self.request(method, url, **kwargs)
 
-    async def get_as_user(self, url: str, user: Optional[User] = None, **kwargs: Any) -> Response:
-        """GET запрос от имени пользователя."""
-        return await self.authenticated_request("GET", url, auth_user=user, **kwargs)
-
-    async def post_as_user(self, url: str, user: Optional[User] = None, **kwargs: Any) -> Response:
-        """POST запрос от имени пользователя."""
-        return await self.authenticated_request("POST", url, auth_user=user, **kwargs)
-
-    async def put_as_user(self, url: str, user: Optional[User] = None, **kwargs: Any) -> Response:
-        """PUT запрос от имени пользователя."""
-        return await self.authenticated_request("PUT", url, auth_user=user, **kwargs)
-
-    async def delete_as_user(self, url: str, user: Optional[User] = None, **kwargs: Any) -> Response:
-        """DELETE запрос от имени пользователя."""
-        return await self.authenticated_request("DELETE", url, auth_user=user, **kwargs)
 
     def clear_cache(self) -> None:
         """Очистить кеш routes (полезно при динамическом изменении роутов)."""
         self._cached_routes = None
 
-    def get_current_user(self) -> Optional[User]:
-        """Получить текущего аутентифицированного пользователя."""
-        return self.auth_user
 
     def is_authenticated(self) -> bool:
         """Проверить, аутентифицирован ли пользователь."""
         return self.auth_user is not None and "Authorization" in self.headers
-
-    def get_auth_headers(self) -> dict[str, str]:
-        """Получить заголовки авторизации."""
-        return {"Authorization": self.headers.get("Authorization", "")} if self.is_authenticated() else {}
 
     async def request(self, method: str, url: str, **kwargs) -> Response:
         """Переопределенный метод request с трекингом метрик."""

@@ -14,10 +14,10 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from apps.base.models import BaseModel
+from core.base.models import BaseModel
 from core.database import get_db
 from main import app as main_app
-from tests.factories.user_factory import AdminUserFactory, SimpleUserFactory, VerifiedUserFactory, make_user_data
+# from tests.factories.user_factory import AdminUserFactory, SimpleUserFactory, VerifiedUserFactory, make_user_data
 from tests.utils_test.api_test_client import AsyncApiTestClient
 
 
@@ -29,14 +29,14 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def temp_dir():
     """Временная директория для тестов."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         yield Path(tmp_dir)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 async def async_engine():
     """Асинхронный SQLite движок для тестов."""
     engine = create_async_engine(
@@ -58,7 +58,7 @@ async def async_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
     """Асинхронная сессия БД для тестов."""
     async_session_maker = async_sessionmaker(
@@ -71,7 +71,7 @@ async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def app(async_session) -> FastAPI:
     """FastAPI приложение с переопределенной БД."""
 
@@ -95,29 +95,11 @@ async def api_client(app: FastAPI, async_session) -> AsyncGenerator[AsyncApiTest
         yield client
 
 
-# Фикстуры пользователей
-@pytest.fixture(scope="function")
-def sample_user():
-    """Простой тестовый пользователь."""
-    return SimpleUserFactory()
 
 
-@pytest.fixture(scope="function")
-def verified_user():
-    """Верифицированный пользователь."""
-    return VerifiedUserFactory()
 
 
-@pytest.fixture(scope="function")
-def admin_user():
-    """Администратор."""
-    return AdminUserFactory()
 
-
-@pytest.fixture(scope="function")
-def test_user_data():
-    """Данные для создания пользователя."""
-    return make_user_data()
 
 
 # Вспомогательные классы
@@ -148,3 +130,89 @@ class TestHelpers:
 def helpers():
     """Фикстура вспомогательных методов."""
     return TestHelpers
+
+
+# Фикстуры для Repository tests
+@pytest.fixture(scope="function")
+async def user_repository(async_session):
+    """Repository для пользователей."""
+    from apps.users.models import User
+    from core.base.repo import BaseRepository
+
+    return BaseRepository(User, async_session)
+
+
+@pytest.fixture(scope="function")
+async def cache_manager():
+    """Cache manager для тестов."""
+    from core.base.repo import CacheManager
+
+    return CacheManager(
+        redis_client=None,  # Используем только memory cache в тестах
+        use_redis=False,
+        use_memory=True,
+        default_ttl=300,
+        key_prefix="test:repo:",
+    )
+
+
+@pytest.fixture(scope="function")
+async def cached_user_repository(async_session, cache_manager):
+    """Repository с кэшированием для пользователей."""
+    from apps.users.models import User
+    from core.base.repo import BaseRepository
+
+    return BaseRepository(User, async_session, cache_manager)
+
+
+@pytest.fixture(scope="function")
+def user_data(faker):
+    """Данные для создания пользователя через repository."""
+    unique_suffix = faker.uuid4()[:8]
+    return {
+        "email": f"{faker.user_name()}_{unique_suffix}@{faker.domain_name()}",
+        "username": f"{faker.user_name()}_{unique_suffix}",
+        "full_name": faker.name(),
+        "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj1yZDFgw8Hm",
+        "is_active": faker.boolean(chance_of_getting_true=80),  # 80% активных
+        "is_verified": faker.boolean(chance_of_getting_true=60),  # 60% верифицированных
+        "is_superuser": faker.boolean(chance_of_getting_true=10),  # 10% суперпользователей
+        "bio": faker.text(max_nb_chars=200),
+    }
+
+
+@pytest.fixture(scope="function")
+def bulk_users_data(faker):
+    """Данные для bulk операций."""
+    return [
+        {
+            "email": f"{faker.user_name()}_{i}_{faker.uuid4()[:4]}@{faker.domain_name()}",
+            "username": f"{faker.user_name()}_{i}_{faker.uuid4()[:4]}",
+            "full_name": faker.name(),
+            "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj1yZDFgw8Hm",
+            "is_active": faker.boolean(chance_of_getting_true=90),  # 90% активных
+            "is_verified": i % 2 == 0,  # Четные верифицированы для предсказуемости тестов
+            "is_superuser": False,
+            "bio": faker.text(max_nb_chars=150),
+        }
+        for i in range(1, 6)  # 5 пользователей
+    ]
+
+
+@pytest.fixture(scope="function")
+def bulk_users_data_predictable(faker):
+    """Данные для bulk операций с предсказуемыми значениями для тестов."""
+    domain = faker.domain_name()
+    return [
+        {
+            "email": f"{faker.user_name()}_bulk_{i}@{domain}",
+            "username": f"{faker.user_name()}_bulk_{i}_{faker.uuid4()[:4]}",
+            "full_name": faker.name(),
+            "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj1yZDFgw8Hm",
+            "is_active": True,  # Все активны для предсказуемости
+            "is_verified": i % 2 == 0,  # Четные верифицированы для предсказуемости тестов
+            "is_superuser": False,
+            "bio": faker.text(max_nb_chars=150) if i % 3 != 0 else None,  # Каждый третий без bio
+        }
+        for i in range(1, 6)  # 5 пользователей
+    ]

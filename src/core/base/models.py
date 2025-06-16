@@ -5,10 +5,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, BaseModel as PydanticBaseModel
 from pytz import utc
 from sqlalchemy import UUID, DateTime
 from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, declared_attr
 from sqlalchemy.sql import func
 
@@ -27,8 +28,6 @@ if os.environ.get("DEBUG", "false").lower() == "true":
 
 
 class BaseModel(DeclarativeBase, AsyncAttrs):
-    __abstract__ = True
-
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid()
     )
@@ -41,7 +40,7 @@ class BaseModel(DeclarativeBase, AsyncAttrs):
 
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
 
-    @declared_attr
+    @hybrid_property
     def is_deleted(self) -> bool:
         """Проверка на мягкое удаление."""
         return self.deleted_at is not None
@@ -65,7 +64,7 @@ class BaseModel(DeclarativeBase, AsyncAttrs):
                 setattr(self, key, value)
 
 
-class BaseSchema(BaseModel):
+class BaseSchema(PydanticBaseModel):
     model_config = ConfigDict(
         from_attributes=True,
         use_enum_values=True,

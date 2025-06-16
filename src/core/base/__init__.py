@@ -2,9 +2,7 @@
 Базовые компоненты для всех приложений.
 """
 
-from .events import BaseEvent, CreateEvent, DeleteEvent, UpdateEvent
-from .models import BaseModel, TimestampMixin
-from .repository import BaseRepository
+from .models import BaseModel
 
 __all__ = [
     "BaseEvent",
@@ -12,6 +10,9 @@ __all__ = [
     "BaseRepository",
     "CreateEvent",
     "DeleteEvent",
-    "TimestampMixin",
     "UpdateEvent",
 ]
+
+from .repo import BaseRepository
+
+from .repo.events import BaseEvent, CreateEvent, DeleteEvent, UpdateEvent

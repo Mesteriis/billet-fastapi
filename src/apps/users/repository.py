@@ -8,7 +8,7 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..base.repository import BaseRepository
+from core.base import BaseRepository
 from .models import User
 from .schemas import UserCreate, UserUpdate
 

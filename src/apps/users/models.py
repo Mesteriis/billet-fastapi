@@ -7,24 +7,26 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from pytz import utc
 from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..base.models import BaseEntity
+from core.base import BaseModel
 
 if TYPE_CHECKING:
     from ..auth.models import RefreshToken
 
 
-class User(BaseEntity):
+class User(BaseModel):
     """Модель пользователя."""
 
     __tablename__ = "users"
     __table_args__ = {"extend_existing": True}
 
     # Основная информация
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Аутентификация
@@ -49,16 +51,16 @@ class User(BaseEntity):
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, username={self.username})>"
 
-    @property
+    @hybrid_property
     def is_email_verified(self) -> bool:
         """Проверка верификации email."""
         return self.email_verified_at is not None
 
     def verify_email(self) -> None:
         """Верификация email пользователя."""
-        self.email_verified_at = datetime.now(tz=utc)()
+        self.email_verified_at = datetime.now(tz=utc)
         self.is_verified = True
 
     def update_last_login(self) -> None:
         """Обновление времени последнего входа."""
-        self.last_login_at = datetime.now(tz=utc)()
+        self.last_login_at = datetime.now(tz=utc)

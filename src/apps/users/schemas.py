@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import EmailStr, Field, field_validator
 
-from ..base.models import BaseSchema, CreateSchema, TimestampSchema, UpdateSchema
+from core.base.models import BaseSchema
 
 
 class UserBase(BaseSchema):
@@ -29,7 +29,7 @@ class UserBase(BaseSchema):
         return v.lower()
 
 
-class UserCreate(UserBase, CreateSchema):
+class UserCreate(UserBase):
     """Схема для создания пользователя."""
 
     password: str = Field(..., min_length=8, description="Пароль")
@@ -44,7 +44,7 @@ class UserCreate(UserBase, CreateSchema):
         return v
 
 
-class UserUpdate(UpdateSchema):
+class UserUpdate(BaseSchema):
     """Схема для обновления пользователя."""
 
     email: EmailStr | None = Field(None, description="Email пользователя")
@@ -64,7 +64,7 @@ class UserUpdate(UpdateSchema):
         return v.lower() if v else v
 
 
-class UserResponse(UserBase, TimestampSchema):
+class UserResponse(UserBase):
     """Схема для ответа с данными пользователя."""
 
     is_active: bool = Field(..., description="Активность пользователя")

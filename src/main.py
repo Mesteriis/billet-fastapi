@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import FastAPI
 
 from core.config import get_settings
-from core.routes import router as tasks_router
 from core.taskiq_client import broker
 from core.telemetry import instrument_fastapi_app, setup_telemetry
 
@@ -100,15 +99,12 @@ app = FastAPI(
 # Инструментация FastAPI для OpenTelemetry
 instrument_fastapi_app(app)
 
-# Подключаем роуты для TaskIQ
-app.include_router(tasks_router)
-
 # Подключаем роуты для аутентификации и пользователей
-from apps.auth.routes import router as auth_router
-from apps.users.routes import router as users_router
+# from apps.auth.routes import router as auth_router
+# from apps.users.routes import router as users_router
 
-app.include_router(auth_router, prefix=settings.API_V1_STR)
-app.include_router(users_router, prefix=settings.API_V1_STR)
+# app.include_router(auth_router, prefix=settings.API_V1_STR)
+# app.include_router(users_router, prefix=settings.API_V1_STR)
 
 # Подключаем Realtime роутеры (WebSocket, SSE, WebRTC)
 if REALTIME_AVAILABLE:
