@@ -1,3 +1,4 @@
+```python
 import uuid
 from datetime import datetime, timedelta
 
@@ -42,7 +43,7 @@ class UserFactory(AsyncSQLAlchemyFactory):
     is_superuser = False
 
     refresh_tokens = RelatedFactory(RefreshTokenFactory, factory_related_name="user")  # Связь с токенами обновления
-
+    
 @pytest.fixture
 def user_factory(async_session):
     """Фикстура для фабрики."""
@@ -62,3 +63,5 @@ async def test_request(api_client, user):
     await api_client.force_auth(user)
     response = await api_client.get(url)
     assert response.status_code == 200
+
+```

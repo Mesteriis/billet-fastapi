@@ -18,8 +18,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 # Импорты realtime системы
-from core.realtime import (
+from src.core.realtime import (
     BinaryMessage,
+    MessageType,
     WebRTCSignalType,
     WSClient,
     connection_manager,
@@ -58,8 +59,8 @@ async def websocket_basic_example():
         print("✅ WebSocket подключен")
 
         # Отправка сообщений
-        await client.send_text("Привет, WebSocket!")
-        await client.send_json({"type": "greeting", "message": "Hello from client"})
+        await client.send_message("Привет, WebSocket!", MessageType.TEXT)
+        await client.send_message({"type": "greeting", "message": "Hello from client"}, MessageType.JSON)
 
         # Отправка команды
         await client.send_command("join_channel", {"channel": "general"})

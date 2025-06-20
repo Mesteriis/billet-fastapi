@@ -1,11 +1,37 @@
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel as PydanticBaseModel, Field
+from pydantic import BaseModel as PydanticBaseModel
+from pydantic import Field
 
 from .enums import Priority
 from .modesl_for_test import PostStatus
+
+
+class TestUserCreate(PydanticBaseModel):
+    username: str = Field(..., max_length=50)
+    email: str = Field(..., max_length=255)
+    full_name: str | None = Field(None, max_length=255)
+    hashed_password: str
+    is_active: bool = True
+    is_superuser: bool = False
+    is_verified: bool = False
+    avatar_url: str | None = None
+    bio: str | None = None
+
+
+class TestUserUpdate(PydanticBaseModel):
+    username: str | None = Field(None, max_length=50)
+    email: str | None = Field(None, max_length=255)
+    full_name: str | None = Field(None, max_length=255)
+    is_active: bool | None = None
+    is_superuser: bool | None = None
+    is_verified: bool | None = None
+    avatar_url: str | None = None
+    bio: str | None = None
+    last_login_at: datetime | None = None
+    email_verified_at: datetime | None = None
 
 
 class TestPostCreate(PydanticBaseModel):

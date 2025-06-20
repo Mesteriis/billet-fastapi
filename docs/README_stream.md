@@ -7,7 +7,7 @@
 ### WebSocket клиент
 
 ```python
-from core.realtime import WSClient
+from src.core.realtime import WSClient
 
 
 async def websocket_example():
@@ -25,7 +25,7 @@ async def websocket_example():
 ### SSE клиент
 
 ```python
-from core.realtime import create_sse_client
+from src.core.realtime import create_sse_client
 
 
 async def sse_example():
@@ -49,7 +49,7 @@ await client.send_json({"type": "data", "value": 123})
 await client.send_command("join_channel", {"channel": "general"})
 
 # Отправка файлов
-from core.realtime import BinaryMessage
+from src.core.realtime import BinaryMessage
 
 binary_msg = BinaryMessage.from_bytes(file_data, "image/png", "photo.png")
 await client.send_binary(binary_msg)
@@ -81,7 +81,7 @@ await client.send_webrtc_signal(
 
 ```python
 from fastapi import WebSocket
-from core.realtime import ConnectionManager
+from src.core.realtime import ConnectionManager
 
 connection_manager = ConnectionManager()
 
@@ -146,7 +146,7 @@ POST /realtime/binary/upload       # Загрузка файла
 
 ```python
 # Статистика соединений
-from core.realtime import connection_manager
+from src.core.realtime import connection_manager
 
 stats = await connection_manager.get_connection_stats()
 print(f"Активных соединений: {stats['websocket_count']}")
@@ -157,7 +157,7 @@ print(f"SSE соединений: {stats['sse_count']}")
 
 ```python
 # Аутентифицированный клиент
-from core.realtime import create_ws_client
+from src.core.realtime import create_ws_client
 
 client = create_ws_client(
     url="ws://localhost:8000/realtime/ws",
@@ -205,7 +205,7 @@ await client.send_json({
 
 ```python
 import pytest
-from core.realtime import WSClient
+from src.core.realtime import WSClient
 
 
 @pytest.mark.asyncio

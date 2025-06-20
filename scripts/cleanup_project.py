@@ -7,14 +7,14 @@
 - reports/ - отчеты (кроме важных)
 - htmlcov/ - отчеты покрытия HTML
 - .coverage* - файлы покрытия
-- .pytest_cache/ - кеш pytest
-- .mypy_cache/ - кеш mypy
-- __pycache__/ - кеш Python
-- *.pyc, *.pyo - скомпилированные Python файлы
-- .DS_Store - файлы macOS
-- Thumbs.db - файлы Windows
-- *.tmp, *.temp - временные файлы
-- *.log - лог файлы (кроме важных)
+- .pytest_cache/ - кеш pytest (включая в src/, tests/)
+- .mypy_cache/ - кеш mypy (включая в src/, tests/)
+- __pycache__/ - кеш Python (включая в src/, tests/)
+- *.pyc, *.pyo - скомпилированные Python файлы (ВЕЗДЕ)
+- coverage.xml, *.log - отчеты и логи (включая в src/)
+- .DS_Store - файлы macOS (ВЕЗДЕ)
+- Thumbs.db - файлы Windows (ВЕЗДЕ)
+- *.tmp, *.temp - временные файлы (ВЕЗДЕ)
 - .tox/ - tox окружения
 - .ruff_cache/, .black_cache/ - кеш линтеров
 
@@ -22,8 +22,10 @@
 - .venv/, venv/, env/ - виртуальные окружения
 - node_modules/ - зависимости Node.js
 - dist/, build/ - артефакты сборки
-- src/, tests/, docs/ - исходный код
+- *.py - исходный код Python (в src/, tests/, docs/)
 - .git/ - репозиторий Git
+
+НОВОЕ: Теперь ищет мусор И В ЗАЩИЩЕННЫХ ДИРЕКТОРИЯХ (src/, tests/, docs/)!
 """
 
 import argparse
@@ -46,15 +48,17 @@ class ProjectCleaner:
 
         # Паттерны для удаления (только мусор, НЕ виртуальные окружения!)
         self.directories_to_remove = {
-            ".benchmarks",
-            "htmlcov",
-            ".pytest_cache",
-            ".mypy_cache",
-            "__pycache__",
-            ".tox",
-            ".coverage_html",
-            ".ruff_cache",
-            ".black_cache",
+            ".benchmarks",  # Директория бенчмарков
+            "htmlcov",  # HTML отчеты покрытия
+            ".pytest_cache",  # Кеш pytest
+            ".mypy_cache",  # Кеш mypy
+            "__pycache__",  # Кеш Python
+            ".tox",  # Tox окружения
+            ".coverage_html",  # HTML покрытие
+            ".ruff_cache",  # Кеш Ruff
+            ".black_cache",  # Кеш Black
+            ".hypothesis",  # Hypothesis кеш
+            ".cache",  # Общий кеш
         }
 
         self.file_patterns_to_remove = {
@@ -62,6 +66,10 @@ class ProjectCleaner:
             "*.pyo",
             "*.pyd",
             ".coverage*",
+            "coverage.xml",  # Coverage XML отчет в корне
+            "coverage.json",  # Coverage JSON отчет
+            "junit.xml",  # JUnit XML отчет
+            "test-results.xml",  # Результаты тестов XML
             "*.tmp",
             "*.temp",
             "*.log",
@@ -159,9 +167,23 @@ class ProjectCleaner:
 
         return False
 
+    def is_cache_directory(self, path: Path) -> bool:
+        """Проверить, является ли путь кеш-директорией, которую можно удалить даже внутри защищенных директорий."""
+        cache_directories = {
+            ".mypy_cache",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".black_cache",
+            ".hypothesis",
+            ".cache",
+        }
+        return path.name in cache_directories
+
     def should_remove_file(self, file_path: Path) -> bool:
         """Определить, нужно ли удалить файл."""
-        if self.is_protected(file_path):
+        # Проверяем, не является ли сам файл защищенным
+        if file_path.name in self.protected_files:
             return False
 
         # Проверяем паттерны файлов
@@ -177,6 +199,37 @@ class ProjectCleaner:
 
         return False
 
+    def is_safe_to_remove_in_protected_dir(self, file_path: Path) -> bool:
+        """Проверить, безопасно ли удалить файл в защищенной директории."""
+        # Только определенные типы мусорных файлов можно удалять в защищенных директориях
+        safe_patterns = {
+            "*.pyc",
+            "*.pyo",
+            "*.pyd",  # Скомпилированные Python файлы
+            ".coverage*",
+            "coverage.xml",
+            "coverage.json",  # Отчеты покрытия
+            "junit.xml",
+            "test-results.xml",  # XML отчеты тестов
+            "*.tmp",
+            "*.temp",  # Временные файлы
+            "*.log",  # Лог файлы
+            ".DS_Store",
+            "Thumbs.db",  # Системные файлы
+            "*.orig",
+            "*.rej",  # Файлы патчей
+            "*.swp",
+            "*.swo",
+            "*~",  # Временные файлы редакторов
+        }
+
+        # Проверяем безопасные паттерны
+        for pattern in safe_patterns:
+            if file_path.match(pattern):
+                return True
+
+        return False
+
     def clean_directories(self) -> None:
         """Очистить директории."""
         for root, dirs, files in os.walk(self.project_root):
@@ -186,7 +239,12 @@ class ProjectCleaner:
             for dir_name in list(dirs):
                 dir_path = root_path / dir_name
 
-                if dir_name in self.directories_to_remove and not self.is_protected(dir_path):
+                # Проверяем: либо директория не защищена, либо это кеш-директория
+                should_remove = dir_name in self.directories_to_remove and (
+                    not self.is_protected(dir_path) or self.is_cache_directory(dir_path)
+                )
+
+                if should_remove:
                     size = self.get_directory_size(dir_path)
 
                     if self.verbose:
@@ -213,20 +271,29 @@ class ProjectCleaner:
         for root, dirs, files in os.walk(self.project_root):
             root_path = Path(root)
 
-            # Пропускаем защищенные директории
-            if any(protected in root_path.parts for protected in self.protected_directories):
-                continue
+            # Проверяем, находимся ли в защищенной директории
+            in_protected_dir = any(protected in root_path.parts for protected in self.protected_directories)
 
             for file_name in files:
                 file_path = root_path / file_name
 
-                if self.should_remove_file(file_path):
+                # Определяем, можно ли удалить файл
+                should_remove = False
+                if in_protected_dir:
+                    # В защищенной директории удаляем только безопасные мусорные файлы
+                    should_remove = self.is_safe_to_remove_in_protected_dir(file_path)
+                else:
+                    # В обычных директориях используем стандартную логику
+                    should_remove = self.should_remove_file(file_path)
+
+                if should_remove:
                     try:
                         size = file_path.stat().st_size
 
                         if self.verbose:
+                            protection_note = " [protected dir]" if in_protected_dir else ""
                             print(
-                                f"📄 Удаляем файл: {file_path.relative_to(self.project_root)} ({self.format_size(size)})"
+                                f"📄 Удаляем файл: {file_path.relative_to(self.project_root)}{protection_note} ({self.format_size(size)})"
                             )
 
                         if not self.dry_run:

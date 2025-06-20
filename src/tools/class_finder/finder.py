@@ -168,13 +168,9 @@ class ClassFinder:
 
     def dynamic_import(self, import_statements: list[tuple[str, str]]) -> list[str]:
         """
-        Динамически импортирует указанные классы.
-
-        Args:
-            import_statements: Список кортежей (module_path, class_name).
-
-        Returns:
-            Список результатов импорта с сообщениями об успехе или неудаче.
+        Выполняет динамический импорт классов и возвращает отчет о результатах.
+        :param import_statements: Список кортежей (module_path, class_name) для импорта.
+        :return: Список строк с отчетом о результатах импорта.
         """
         report = []
 

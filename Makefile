@@ -64,11 +64,15 @@ help: ## 📋 Показать справку по всем командам
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## 🧹/ {printf "  $(GREEN)%-18s$(NC) %s\n", $$1, substr($$2, 3)}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "$(YELLOW)💡 Примеры использования:$(NC)"
-	@echo "  $(GREEN)make test$(NC)                    - Запустить все тесты"
+	@echo "  $(GREEN)make test$(NC)                    - Запустить все тесты (с очисткой)"
+	@echo "  $(GREEN)make test-no-cleanup$(NC)         - Тесты без очистки проекта"
+	@echo "  $(GREEN)make test-fast-no-cleanup$(NC)    - Быстрые тесты для разработки"
 	@echo "  $(GREEN)make test -m unit$(NC)           - Запустить только unit тесты"  
 	@echo "  $(GREEN)make test -m auth --cov$(NC)     - Тесты auth с покрытием"
 	@echo "  $(GREEN)make test -v -s$(NC)             - Подробный вывод + логи"
 	@echo "  $(GREEN)make test --pdb$(NC)             - Режим отладки"
+	@echo "  $(GREEN)make clean$(NC)                   - Очистить временные файлы"
+	@echo "  $(GREEN)make pre-commit-cleanup-full$(NC) - Полная очистка через pre-commit"
 	@echo "  $(GREEN)make run HOST=127.0.0.1$(NC)     - API на localhost"
 	@echo "  $(GREEN)make worker WORKERS=8$(NC)       - 8 воркеров TaskIQ"
 
@@ -100,6 +104,12 @@ setup-dev: dev ## 📦 Настройка среды разработки (dev +
 	@$(MAKE) redis-start
 	@echo "$(GREEN)✅ Среда разработки готова!$(NC)"
 
+setup-testing: dev ## 📦 Настройка среды для тестирования (с оптимизацией Docker)
+	@echo "$(GREEN)🧪 Настройка среды для тестирования...$(NC)"
+	@$(MAKE) docker-warm
+	@$(MAKE) install-playwright
+	@echo "$(GREEN)✅ Среда тестирования готова! Docker образы прогреты.$(NC)"
+
 # ============================================================================
 # ЗАПУСК СЕРВИСОВ  
 # ============================================================================
@@ -110,15 +120,15 @@ run: ## 🏃 Запустить FastAPI сервер (HOST=0.0.0.0 PORT=8000)
 
 worker: ## 🏃 Запустить TaskIQ воркеры (WORKERS=4)
 	@echo "$(GREEN)⚡ Запуск $(WORKERS) TaskIQ воркеров...$(NC)"
-	@python src/cli.py worker --workers $(WORKERS)
+	uv run src/cli.py worker --workers $(WORKERS)
 
 worker-dev: ## 🏃 Запустить воркеры в dev режиме с автоперезагрузкой
 	@echo "$(GREEN)🔄 Запуск TaskIQ воркеров (dev режим)...$(NC)"
-	@python src/cli.py worker --workers 2 --reload
+	uv run src/cli.py worker --workers 2 --reload
 
 taskiq-info: ## 🏃 Показать информацию о TaskIQ
 	@echo "$(BLUE)ℹ️  Информация о TaskIQ:$(NC)"
-	@python src/cli.py info
+	uv run src/cli.py info
 
 # ============================================================================
 # ТЕСТИРОВАНИЕ
@@ -161,6 +171,22 @@ test-e2e: ## 🧪 E2E тесты
 test-auth: ## 🧪 Тесты аутентификации
 	@$(MAKE) test ARGS="-m auth"
 
+test-repo: ## 🧪 Тесты репозитория (быстрые тесты без coverage)
+	@echo "🚀 Запуск тестов репозитория без coverage..."
+	pytest tests/core/base/test_repo/ -v --no-cov --tb=short
+
+test-repo-single: ## 🧪 Запуск одного теста репозитория
+	@echo "🎯 Запуск одного теста репозитория..."
+	pytest tests/core/base/test_repo/test_repository_aggregation.py::test_aggregations -v --no-cov
+
+test-fast: ## 🧪 Быстрые тесты разработки (без coverage, без медленных тестов)
+	@echo "⚡ Быстрые тесты для разработки..."
+	pytest -m "not slow" --no-cov -v --tb=short
+
+test-full: ## 🧪 Тестирование с coverage (для CI/CD)
+	@echo "📊 Полные тесты с coverage..."
+	pytest -v --tb=short
+
 test-cov: ## 🧪 Все тесты с покрытием
 	@$(MAKE) test ARGS="--cov"
 
@@ -169,6 +195,21 @@ test-debug: ## 🧪 Тесты в режиме отладки
 
 test-parallel: ## 🧪 Параллельные тесты
 	@$(MAKE) test ARGS="-n auto"
+
+test-no-cleanup: ## 🧪 Тесты без автоматической очистки проекта (SKIP_CLEANUP_ARTIFACTS=1)
+	@echo "$(BLUE)🧪 Запуск тестов без очистки проекта...$(NC)"
+	@SKIP_CLEANUP_ARTIFACTS=1 $(MAKE) test ARGS="$(ARGS)"
+
+test-unit-no-cleanup: ## 🧪 Unit тесты без очистки
+	@SKIP_CLEANUP_ARTIFACTS=1 $(MAKE) test-unit
+
+test-fast-no-cleanup: ## 🧪 Быстрые тесты без очистки (для частой разработки)
+	@echo "⚡ Быстрые тесты без очистки артефактов..."
+	@SKIP_CLEANUP_ARTIFACTS=1 pytest -m "not slow" --no-cov -v --tb=short
+
+test-benchmark: ## 🧪 Бенчмарк тесты с измерением производительности
+	@echo "$(PURPLE)⏱️  Бенчмарк тесты...$(NC)"
+	@$(MAKE) test ARGS="--benchmark-only --benchmark-sort=mean"
 
 # Специальные типы тестов  
 test-load: ## 🧪 Нагрузочные тесты с Locust
@@ -214,10 +255,10 @@ migrate-reset: ## 🗄️ СБРОС всех миграций (ОСТОРОЖН
 	@echo "$(GREEN)✅ Все миграции сброшены$(NC)"
 
 db-info: ## 🗄️ Информация о базе данных
-	@python scripts/migration_cli.py db-info
+	uv run scripts/migration_cli.py db-info
 
 db-create: ## 🗄️ Создать базу данных
-	@python scripts/migration_cli.py db-create
+	uv run scripts/migration_cli.py db-create
 
 db-backup: ## 🗄️ Создать бэкап базы данных
 	@echo "$(BLUE)💾 Создание бэкапа базы данных...$(NC)"
@@ -257,6 +298,18 @@ pre-commit-run: ## 🔍 Запустить pre-commit на всех файлах
 	@echo "$(YELLOW)🔍 Запуск pre-commit...$(NC)"
 	@uv run pre-commit run --all-files
 
+pre-commit-cleanup-dry: ## 🔍 Запустить только dry-run очистку через pre-commit
+	@echo "$(BLUE)🔍 Предварительный просмотр очистки через pre-commit...$(NC)"
+	@uv run pre-commit run cleanup-project-dry
+
+pre-commit-cleanup-full: ## 🔍 Запустить полную очистку через pre-commit
+	@echo "$(GREEN)🧹 Полная очистка через pre-commit...$(NC)"
+	@PRECOMMIT_CLEANUP=full uv run pre-commit run cleanup-project-full --hook-stage manual
+
+pre-commit-cleanup-verbose: ## 🔍 Запустить подробную очистку через pre-commit
+	@echo "$(CYAN)🔍 Подробная очистка через pre-commit...$(NC)"
+	@PRECOMMIT_CLEANUP=verbose uv run pre-commit run cleanup-project-verbose --hook-stage manual
+
 # ============================================================================
 # DOCKER
 # ============================================================================
@@ -277,17 +330,30 @@ docker-logs: ## 🐳 Показать логи Docker сервисов
 	@echo "$(BLUE)📋 Логи Docker сервисов:$(NC)"
 	@docker-compose logs -f
 
+docker-warm: ## 🐳 Прогреть Docker кэш для быстрых тестов
+	@echo "$(PURPLE)🔥 Прогрев Docker кэша...$(NC)"
+	uv run scripts/warm_docker_cache.py
+
+docker-clean: ## 🐳 Очистить Docker кэш и неиспользуемые образы
+	@echo "$(YELLOW)🧹 Очистка Docker кэша...$(NC)"
+	@docker system prune -af
+	@docker volume prune -f
+
 # ============================================================================
 # УТИЛИТЫ
 # ============================================================================
 
 clean: ## 🧹 Очистить временные файлы проекта
 	@echo "$(YELLOW)🧹 Очистка временных файлов...$(NC)"
-	@python scripts/cleanup_project.py
+	uv run scripts/cleanup_project.py
 
 clean-dry: ## 🧹 Показать что будет удалено при очистке
 	@echo "$(BLUE)🔍 Предварительный просмотр очистки...$(NC)"
-	@python scripts/cleanup_project.py --dry-run
+	uv run scripts/cleanup_project.py --dry-run
+
+clean-verbose: ## 🧹 Подробная очистка с выводом удаляемых файлов
+	@echo "$(BLUE)🔍 Подробная очистка проекта...$(NC)"
+	uv run scripts/cleanup_project.py --verbose
 
 redis-start: ## 🧹 Запустить Redis через Docker
 	@echo "$(GREEN)🔴 Запуск Redis...$(NC)"
@@ -309,3 +375,14 @@ update-deps: ## 🧹 Обновить зависимости
 logs: ## 🧹 Показать логи приложения
 	@echo "$(BLUE)📋 Логи приложения:$(NC)"
 	@tail -f app.log 2>/dev/null || echo "Файл логов не найден"
+
+jupyter: ## 🧹 Запустить Jupyter Lab с интерактивной документацией
+	@echo "$(GREEN)📚 Запуск Jupyter Lab...$(NC)"
+	@echo "$(YELLOW)💡 Откроется браузер с интерактивной документацией$(NC)"
+	@echo "$(BLUE)📍 Notebooks расположены в папке notebooks/$(NC)"
+	@uv run jupyter lab notebooks/ --port=8888
+
+jupyter-install: ## 🧹 Установить Jupyter и зависимости для notebooks
+	@echo "$(BLUE)📦 Установка Jupyter и зависимостей...$(NC)"
+	@uv add --dev notebook jupyterlab ipywidgets matplotlib seaborn plotly pandas
+	@echo "$(GREEN)✅ Jupyter установлен! Запустите: make jupyter$(NC)"

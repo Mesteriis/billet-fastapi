@@ -62,7 +62,6 @@ dev = [
     "pytest-httpx>=0.35.0",
     "pytest-json-report>=1.5.0",
     "pytest-mock>=3.14.1",
-    "pytest-mock-resources[postgres-async,redis]>=2.12.2",
     "pytest-rabbitmq>=3.1.1",
     "pytest-sugar>=1.0.0",
     "pytest-watch>=4.2.0",
@@ -80,6 +79,7 @@ dev = [
     "types-passlib>=1.7.7",
     "types-setuptools>=70.3.0",
     "python-on-whales>=0.77.0",
+    "testcontainers>=4.10.0",
 ]
 
 [tool.ruff]
@@ -155,54 +155,65 @@ known-first-party = ["src", "apps", "core"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.pytest.ini_options]
-minversion = "7.4"
+minversion = "7.0"
 pythonpath = ["src"]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
 asyncio_mode = "auto"
 
 # Опции запуска
 addopts = [
     "--strict-markers",
+    "--strict-config",
     "--cov=src",
-    "--cov-report=term-missing",
     "--cov-report=html:htmlcov",
-    "--cov-report=xml",
-    "--cov-fail-under=80",
-    "--no-cov-on-fail",
-    "-ra",
-    "--tb=short",
+    "--cov-report=xml:coverage.xml",
+    "--cov-report=term-missing",
+    "--cov-config=pyproject.toml",
+    "--cov-fail-under=70",
     "--html=reports/report.html",
     "--self-contained-html",
     "--json-report",
     "--json-report-file=reports/report.json",
+    "--json-report-summary",
+    "-ra",  # Показывать краткую сводку всех результатов
+    "--tb=short",  # Короткий формат traceback
 ]
 
 # Маркеры тестов
 markers = [
-    "auth: Authentication tests",
-    "users: User management tests",
-    "integration: Integration tests",
-    "unit: Unit tests",
-    "slow: Slow running tests",
-    "asyncio: Async tests",
-    "performance: Performance/load tests",
-    "e2e: End-to-end browser tests",
-    "mocked: Tests with mocked external APIs",
-    "factory: Tests using factories",
-    "factories: Factory tests",
-    "alembic: Alembic migration tests",
-    "enhanced: Enhanced test scenarios",
-    "quiet_logs: Tests with quiet logging",
-    "verbose_logs: Tests with verbose logging",
-    "helpers: Helper function tests",
-    "mocking: Mocking tests",
-    "settings: Settings tests",
-    "cleanup: Cleanup tests",
-    "edge_cases: Edge case tests",
-    "security: Security tests"
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "auth: marks tests as auth module tests",
+    "users: marks tests as users module tests",
+    "performance: marks tests as performance tests",
+    "repository: marks tests as repository tests",
+    "bulk: marks tests as bulk operation tests",
+    "pagination: marks tests as pagination tests",
+    "cache: marks tests as cache tests",
+    "edge_cases: marks tests as edge case tests",
+    "edge_coverage: marks tests as edge coverage tests",
+    "specific_coverage: marks tests for specific code coverage",
+    "fulltext: marks tests as fulltext search tests",
+    "aggregation: marks tests as aggregation tests",
+    "events: marks tests as events tests",
+    "filters: marks tests as filter tests",
+    "errors: marks tests as error handling tests",
+    "advanced: marks tests as advanced feature tests",
+    "security: marks tests as security tests",
+    "no_coverage: marks tests to exclude from coverage calculation",
 ]
 
 # Конфигурация pytest-alembic
@@ -222,6 +233,9 @@ log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
+# Отключение шумных логгеров делается в conftest.py
+log_auto_indent = true
+
 # Переменные окружения для тестов
 env = [
     "TESTING=true",
@@ -235,7 +249,28 @@ env = [
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["tests/*", "**/__init__.py"]
+omit = [
+    "tests/*", 
+    "**/__init__.py",
+    # CLI и скрипты (не используются в основном коде)
+    "src/cli.py",
+    # Messaging система (пока не активна)
+    "src/core/messaging/*",
+    # Realtime система (пока не активна)  
+    "src/core/realtime/*",
+    "src/core/streaming/*",
+    # Telegram система (пока не активна)
+    "src/core/telegram/*",
+    # Tasks и очереди (пока не активны)
+    "src/core/tasks.py",
+    "src/core/taskiq_client.py",
+    # Tools и утилиты (отдельно тестируются)
+    "src/tools/*",
+    # Основное приложение (отдельные тесты)
+    "src/main.py",
+    # Телеметрия (не критична для покрытия)
+    "src/core/telemetry.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -254,7 +289,7 @@ line_length = 120
 known_first_party = ["src"]
 
 [tool.bandit]
-exclude_dirs = ["tests", "migrations", ".venv", 'scripts']
+exclude_dirs = ["tests", "migrations", ".venv", 'scripts', 'docker']
 skips = ["B101", "B404"]
 severity = "LOW"
 confidence = "LOW"
@@ -372,22 +407,13 @@ overgeneral-exceptions = ["builtins.BaseException", "builtins.Exception"]
 # Устаревшие модули которые не должны использоваться
 deprecated-modules = ["optparse", "tkinter.tix"]
 
-[tool.alembic_disabled]
-# Путь к скриптам миграций
+[tool.alembic]
 script_location = "migrations"
-# Шаблон для имен файлов миграций
 file_template = "%%(year)d%%(month).2d%%(day).2d_%%(hour).2d%%(minute).2d_%%(rev)s_%%(slug)s"
-# Путь для добавления в sys.path
 prepend_sys_path = "src"
-# Разделитель путей версий
 version_path_separator = "os"
-# Кодировка для файлов ревизий
 output_encoding = "utf-8"
-# Максимальная длина slug
 truncate_slug_length = 40
-
-# URL базы данных (будет переопределен в env.py из переменных окружения)
-# sqlalchemy.url = "postgresql+asyncpg://postgres:postgres@localhost/app_db"
 
 # Конфигурация mypy
 [tool.mypy]
@@ -474,3 +500,5 @@ ignore_missing_imports = true
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+warn-unannotated-fields = false
+

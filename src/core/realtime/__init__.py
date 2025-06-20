@@ -1,8 +1,9 @@
 """Модуль для работы с WebSocket, SSE и WebRTC в реальном времени."""
 
+from tools.clients.sse_client import SimpleSyncSSEClient, SSEClient, create_authenticated_sse_client, create_sse_client
+from tools.clients.ws_client import WSClient, create_authenticated_client, create_ws_client
+
 from .auth import WSAuthenticator, authenticator, get_ws_auth, optional_auth, require_auth
-from .clients.sse_client import SimpleSyncSSEClient, SSEClient, create_authenticated_sse_client, create_sse_client
-from .clients.ws_client import WSClient, create_authenticated_client, create_ws_client
 from .connection_manager import ConnectionManager, connection_manager
 from .models import (
     BinaryMessage,

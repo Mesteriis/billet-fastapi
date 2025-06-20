@@ -3,27 +3,80 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from typing import Any
+
 from pytz import utc
-from sqlalchemy.ext.hybrid import hybrid_property
-
 from sqlalchemy import (
-    Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text,
-    Index, CheckConstraint, Table, Column
+    JSON,
+    UUID,
+    Boolean,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR, JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
-from core.base.models import BaseModel
 from .enums import PostStatus, Priority
+
+
+# Отдельный DeclarativeBase для тестовых моделей
+class TestBaseModel(DeclarativeBase, AsyncAttrs):
+    """Базовая модель для тестов репозитория."""
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
+
+    @hybrid_property
+    def is_deleted(self) -> bool:
+        """Проверка на мягкое удаление."""
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        """Мягкое удаление записи."""
+        self.deleted_at = datetime.now(tz=utc)
+
+    def restore(self) -> None:
+        """Восстановление мягко удаленной записи."""
+        self.deleted_at = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Преобразование модели в словарь."""
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
+
+    def update(self, **kwargs) -> None:
+        """Обновление полей модели."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
 
 post_tags_table = Table(
     "test_post_tags",
-    BaseModel.metadata,
+    TestBaseModel.metadata,
     Column("post_id", ForeignKey("test_posts.id"), primary_key=True),
     Column("tag_id", ForeignKey("test_tags.id"), primary_key=True),
 )
 
-class TestUser(BaseModel):
+
+class TestUser(TestBaseModel):
     """Модель пользователя."""
 
     __tablename__ = "test_users"
@@ -47,8 +100,7 @@ class TestUser(BaseModel):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    profile: Mapped[TestProfile] = relationship("TestProfile", uselist=False, back_populates="user")
-
+    profile: Mapped["TestProfile"] = relationship("TestProfile", uselist=False, back_populates="user")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, username={self.username})>"
@@ -67,11 +119,13 @@ class TestUser(BaseModel):
         """Обновление времени последнего входа."""
         self.last_login_at = datetime.now(tz=utc)
 
-class TestPost(BaseModel):
+
+class TestPost(TestBaseModel):
     """
     Модель поста для тестирования полнотекстового поиска, JSON полей,
     дат, агрегаций и сложных связей.
     """
+
     __tablename__ = "test_posts"
 
     # Основные поля
@@ -110,7 +164,7 @@ class TestPost(BaseModel):
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("test_categories.id"), nullable=True)
 
     # Relationships
-    author: Mapped["TestUser"] = relationship("TestUser")  # Используем существующую модель User
+    author: Mapped["TestUser"] = relationship("TestUser")
     category: Mapped["TestCategory | None"] = relationship("TestCategory", back_populates="posts")
     comments: Mapped[list["TestComment"]] = relationship("TestComment", back_populates="post")
     tags: Mapped[list["TestTag"]] = relationship("TestTag", secondary=post_tags_table, back_populates="posts")
@@ -126,8 +180,10 @@ class TestPost(BaseModel):
         CheckConstraint("rating >= 0.0 AND rating <= 5.0", name="check_rating_range"),
     )
 
-class TestCategory(BaseModel):
+
+class TestCategory(TestBaseModel):
     """Категория для тестирования иерархических связей и группировок."""
+
     __tablename__ = "test_categories"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -147,8 +203,10 @@ class TestCategory(BaseModel):
     children: Mapped[list["TestCategory"]] = relationship("TestCategory", back_populates="parent")
     posts: Mapped[list[TestPost]] = relationship("TestPost", back_populates="category")
 
-class TestTag(BaseModel):
+
+class TestTag(TestBaseModel):
     """Тег для тестирования связей многие-ко-многим."""
+
     __tablename__ = "test_tags"
 
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
@@ -158,8 +216,10 @@ class TestTag(BaseModel):
     # Связи
     posts: Mapped[list[TestPost]] = relationship("TestPost", secondary=post_tags_table, back_populates="tags")
 
-class TestComment(BaseModel):
+
+class TestComment(TestBaseModel):
     """Комментарий для тестирования вложенных связей и курсорной пагинации."""
+
     __tablename__ = "test_comments"
 
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -184,8 +244,10 @@ class TestComment(BaseModel):
     parent: Mapped["TestComment | None"] = relationship("TestComment", remote_side="TestComment.id")
     children: Mapped[list["TestComment"]] = relationship("TestComment", back_populates="parent")
 
-class TestProfile(BaseModel):
+
+class TestProfile(TestBaseModel):
     """Профиль для тестирования связей один-к-одному."""
+
     __tablename__ = "test_profiles"
 
     # Контактная информация
@@ -199,6 +261,15 @@ class TestProfile(BaseModel):
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Настройки
+    timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
+
+    # JSON настройки
+    preferences: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # Связь один-к-одному с User
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_users.id"), unique=True, nullable=False)
+    user: Mapped[TestUser] = relationship("TestUser", back_populates="profile")  # Настройки
     timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
 

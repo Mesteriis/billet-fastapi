@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import Field, validator
+from pytz import utc
 
 from tools.pydantic import BaseModel
 

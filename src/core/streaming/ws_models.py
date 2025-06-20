@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 
 from pydantic import Field
+from pytz import utc
 
 from tools.pydantic import BaseModel
 
