@@ -1,0 +1,126 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Frontend + Backend Dev Guide
+
+## 🧭 Общие Принципы
+
+- Функциональный и декларативный стиль  
+- Минимум дублирования, максимум модульности  
+- Говорящие имена (`is_active`, `has_permission`)  
+- `snake_case` в файлах и директориях  
+- RORO: Receive an Object, Return an Object
+- docstring на англиском языке в формате Sphinx
+- сообщения об ошибках строго на англиском
+- вместо print использовать логер по имени имя_слоя.имя_модуля (`api.user` или `repo.user`) для тестов использовать имя `test_session`
+
+---
+
+## ⚙️ Backend: FastAPI
+
+- `def` — для sync-функций, `async def` — для асинхронных операций  
+- Валидация через `Pydantic` во всех слоях  
+- Строгая типизация  
+- Ранний `return` и guard-условия  
+- Классы используются во всех слоях проме `api` 
+- Ошибки — через `HTTPException` но через наследование от `BaseException` по слойно
+- Логгирование через `structlog`, проброс `trace_id`
+
+### 📁 Структура Backend
+
+```bash
+src/
+  apps/
+    users/
+      api/
+      services/
+      schemas/
+      models/
+      repo/
+  core/
+    config/
+    db/
+    depends/
+    middleware/
+  main.py
+```
+
+### 🧪 Тестирование
+
+- `pytest`, `pytest-asyncio`, `pytest-mock`
+- `AsyncApiTestClient` для API  
+- `factory_boy`, `async_factory_boy`  
+- Покрытие логики — 80%+
+
+### 🔐 Валидация и Ошибки
+
+- Используй `BaseModel`  
+- Ошибки через `HTTPException` и middleware  
+- Guard-условия и `early return` вместо вложенных `if`
+
+### 🚦 Инфраструктура
+
+- Docker (multi-stage)  
+- CI: GitHub Actions + Woodpecker CI
+- CI stage:  `lint` -> `test` -> `build`-> `publish` -> `push github (manual)` ->`deploy`
+- CD: GitHub Actions + Woodpecker CI
+- Pre-commit: `ruff`, `mypy`, `black`, `bandit`  
+- Semantic Versioning + Conventional Commits
+
+---
+
+## 📋 Conventional Commits
+
+```text
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### 💡 Типы коммитов:
+
+- `feat`: новая фича (MINOR)  
+- `fix`: багфикс (PATCH)  
+- `docs`, `style`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`  
+- `BREAKING CHANGE:` или `!` — MAJOR
+
+---
+
+## 🎨 Frontend: Vue 3 Options API + Vanilla JS (SSR с FastAPI)
+
+> Vue 3 используется как SSR-фронтенд, рендерится через шаблонизатор FastAPI (например, Jinja2). Все маршруты и компоненты интегрированы в backend-приложение без выделенного frontend-сервера.
+
+- Используем `data()`, `methods`, `computed`  
+- `props` и `$emit` для связи компонентов  
+- `watch`, `mounted`, `beforeUnmount`  
+- Без TypeScript — только Vanilla JS
+
+### 📁 Структура Frontend (SSR)
+
+```bash
+src/
+  components/
+  views/
+  router/
+  store/
+  assets/
+  App.vue
+  main.js
+```
+
+### ✅ Рекомендации
+
+1. Используй **Vanilla JS** во всех компонентах и хуках  
+2. Явно определяй `props` и `emits`  
+3. Используй `<Teleport>` для модалок/порталов  
+4. `<Suspense>` для async-компонентов  
+5. Обработка ошибок: `try/catch`, `errorCaptured`, fallback UI  
+6. Следуй [Vue Style Guide](mdc:https:/vuejs.org/style-guide)  
+7. Используй **Vite** для сборки и dev-сервера
+
+---
+
