@@ -80,6 +80,7 @@ dev = [
     "types-setuptools>=70.3.0",
     "python-on-whales>=0.77.0",
     "testcontainers>=4.10.0",
+    "pytest-rich>=0.2.0",
 ]
 
 [tool.ruff]
@@ -189,6 +190,7 @@ addopts = [
     "--json-report-summary",
     "-ra",  # Показывать краткую сводку всех результатов
     "--tb=short",  # Короткий формат traceback
+    "--rich"
 ]
 
 # Маркеры тестов
