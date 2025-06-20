@@ -112,7 +112,7 @@ if REALTIME_AVAILABLE:
         app.include_router(ws_router)
     if settings.SSE_ENABLED:
         app.include_router(sse_router)
-    if getattr(settings, "WEBRTC_ENABLED", True):  # WebRTC по умолчанию включен
+    if settings.WEBRTC_ENABLED:  # WebRTC по умолчанию включен
         app.include_router(webrtc_router)
 
 

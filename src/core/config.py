@@ -152,6 +152,8 @@ class Settings(BaseSettings):
     WS_API_KEY_HEADER: str = "X-API-Key"
     WS_API_KEYS: list[str] = []  # Список разрешенных API ключей
 
+    WEBRTC_ENABLED: bool = False
+
     @field_validator("WS_API_KEYS", mode="before")
     def assemble_api_keys(cls, v: str | list[str]) -> list[str]:  # noqa
         """Сборка списка разрешенных API ключей."""
