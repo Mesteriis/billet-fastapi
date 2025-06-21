@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import Field, validator
 from pytz import utc
 
+from core.exceptions.core_base import CoreRealtimeMessageError
 from tools.pydantic import BaseModel
 
 
@@ -76,7 +77,7 @@ class WSMessage(BaseMessage):
             try:
                 base64.b64decode(v)
             except Exception:
-                raise ValueError("Invalid base64 encoded binary data")
+                raise CoreRealtimeMessageError("websocket", "binary_data")
         return v
 
     def get_binary_data(self) -> bytes | None:
@@ -117,7 +118,7 @@ class BinaryMessage(BaseMessage):
             decoded = base64.b64decode(v)
             return v
         except Exception:
-            raise ValueError("Invalid base64 encoded binary data")
+            raise CoreRealtimeMessageError("binary_message", "binary_data")
 
     def get_binary_data(self) -> bytes:
         """Получить бинарные данные как bytes."""

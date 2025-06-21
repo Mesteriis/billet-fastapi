@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
+from core.exceptions.core_base import CoreTelegramValueError
 from tools.pydantic import BaseModel, BaseSettings
 
 
@@ -57,7 +58,7 @@ class TelegramBotConfig(BaseModel):
     def validate_webhook_url(cls, v: str | None, info) -> str | None:
         """Валидация URL webhook."""
         if v and not v.startswith(("http://", "https://")):
-            raise ValueError("Webhook URL должен начинаться с http:// или https://")
+            raise CoreTelegramValueError("webhook_validation", "webhook_url", v)
         return v
 
 

@@ -1,13 +1,14 @@
 """Система авторизации для WebSocket и SSE."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import get_settings
+from core.exceptions.core_base import CoreStreamingConnectionError
 
 
 class WSAuthError(Exception):
@@ -27,9 +28,9 @@ class WSAuthenticator:
         """Создание JWT токена для WebSocket/SSE."""
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.now(tz=utc)() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.now(tz=utc)() + timedelta(minutes=self.settings.WS_JWT_EXPIRE_MINUTES)
+            expire = datetime.now(timezone.utc) + timedelta(minutes=self.settings.WS_JWT_EXPIRE_MINUTES)
 
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, self.settings.WS_JWT_SECRET_KEY, algorithm=self.settings.WS_JWT_ALGORITHM)
@@ -68,7 +69,7 @@ class WSAuthenticator:
             except WSAuthError:
                 pass
 
-        raise WSAuthError("Не авторизован")
+        raise CoreStreamingConnectionError("Не авторизован - требуется JWT токен или API ключ")
 
     async def authenticate_sse(self, token: str | None = None, api_key: str | None = None) -> dict[str, Any]:
         """Аутентификация SSE соединения."""
@@ -87,7 +88,7 @@ class WSAuthenticator:
             except WSAuthError:
                 pass
 
-        raise WSAuthError("Не авторизован")
+        raise CoreStreamingConnectionError("Требуется авторизация")
 
     async def get_current_user_http(
         self, request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False))
@@ -110,11 +111,7 @@ class WSAuthenticator:
         if not (self.settings.WEBSOCKET_AUTH_REQUIRED or self.settings.SSE_AUTH_REQUIRED):
             return {"authenticated": False, "user": None}
 
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Не авторизован",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise CoreStreamingConnectionError("Не авторизован - требуется JWT токен или API ключ")
 
 
 # Глобальный экземпляр аутентификатора
@@ -129,7 +126,7 @@ async def get_ws_auth() -> WSAuthenticator:
 async def require_auth(user_data: dict[str, Any] = Depends(authenticator.get_current_user_http)) -> dict[str, Any]:
     """Dependency для обязательной авторизации."""
     if not user_data["authenticated"]:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Требуется авторизация")
+        raise CoreStreamingConnectionError("Требуется авторизация")
     return user_data
 
 

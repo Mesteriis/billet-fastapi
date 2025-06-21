@@ -40,6 +40,7 @@ dependencies = [
     "taskiq-redis>=1.0.9",
     "httpx-sse>=0.4.0",
     "async-factory-boy>=1.0.1",
+    "structlog>=25.4.0",
 ]
 
 [dependency-groups]
@@ -81,6 +82,7 @@ dev = [
     "python-on-whales>=0.77.0",
     "testcontainers>=4.10.0",
     "pytest-rich>=0.2.0",
+    "psycopg2-binary>=2.9.10",
 ]
 
 [tool.ruff]
@@ -189,8 +191,7 @@ addopts = [
     "--json-report-file=reports/report.json",
     "--json-report-summary",
     "-ra",  # Показывать краткую сводку всех результатов
-    "--tb=short",  # Короткий формат traceback
-    "--rich"
+    "--tb=short"  # Короткий формат traceback
 ]
 
 # Маркеры тестов
@@ -405,17 +406,8 @@ ignored-argument-names = "_.*|^ignored_|^unused_"
 # Исключения которые вызывают предупреждение при перехвате
 overgeneral-exceptions = ["builtins.BaseException", "builtins.Exception"]
 
-[tool.pylint.imports]
 # Устаревшие модули которые не должны использоваться
 deprecated-modules = ["optparse", "tkinter.tix"]
-
-[tool.alembic]
-script_location = "migrations"
-file_template = "%%(year)d%%(month).2d%%(day).2d_%%(hour).2d%%(minute).2d_%%(rev)s_%%(slug)s"
-prepend_sys_path = "src"
-version_path_separator = "os"
-output_encoding = "utf-8"
-truncate_slug_length = 40
 
 # Конфигурация mypy
 [tool.mypy]
@@ -503,4 +495,23 @@ init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
 warn-unannotated-fields = false
+
+# Конфигурация линтера импортов между приложениями
+[tool.inter_app_imports_linter]
+# Пути для проверки
+paths = ["src/apps"]
+# Паттерны исключений
+exclude_patterns = ["__pycache__", ".venv", "test_*", "*.pyc"]
+# Строгий режим
+strict_mode = true
+# Разрешенные пути для импортов (общие модули)
+allow_shared_imports = [
+    "apps.shared",     # Общие модули между приложениями
+    "core",            # Ядро системы
+    "constants",       # Константы проекта
+    "utils",           # Утилиты
+    "exceptions",      # Общие исключения
+]
+# Имя модуля интерфейсов
+interfaces_module = "interfaces"
 

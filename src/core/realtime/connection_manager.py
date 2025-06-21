@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from core.config import get_settings
+from core.exceptions.core_base import CoreRealtimeConnectionError
 from core.realtime.models import (
     BroadcastMessage,
     ChannelMessage,
@@ -64,7 +65,7 @@ class ConnectionManager:
         # Проверяем лимит соединений
         if len(self.ws_connections) >= self.settings.WEBSOCKET_MAX_CONNECTIONS:
             await websocket.close(code=1013, reason="Превышен лимит соединений")
-            raise Exception("Превышен лимит соединений")
+            raise CoreRealtimeConnectionError("websocket", "Max connections limit exceeded")
 
         # Создаем информацию о соединении
         connection_info = WSConnectionInfo(
@@ -147,7 +148,7 @@ class ConnectionManager:
         """Подключение SSE клиента."""
         # Проверяем лимит соединений
         if len(self.sse_connections) >= self.settings.SSE_MAX_CONNECTIONS:
-            raise Exception("Превышен лимит SSE соединений")
+            raise CoreRealtimeConnectionError("sse", "Max SSE connections limit exceeded")
 
         # Создаем очередь сообщений
         message_queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=self.settings.WEBSOCKET_MESSAGE_QUEUE_SIZE)

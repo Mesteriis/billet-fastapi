@@ -23,7 +23,9 @@ import httpx
 import websockets
 from fastapi import FastAPI
 from httpx import AsyncClient, Response
+from httpx._client import AsyncClient as BaseAsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.testclient import TestClient
 
 # from apps.auth.jwt_service import JWTService
 # from apps.users.models import User
@@ -322,7 +324,12 @@ class AsyncApiTestClient(AsyncClient):
         self._security_payloads: Dict[SecurityTestType, List[str]] = self._init_security_payloads()
         # Простой трекер производительности
         self.performance_tracker = self._create_performance_tracker()
-        super().__init__(base_url="http://test", **kwargs)
+
+        # Используем ASGITransport для работы с FastAPI приложением напрямую
+        from httpx import ASGITransport
+
+        transport = ASGITransport(app=app)
+        super().__init__(base_url="http://testserver", transport=transport, **kwargs)
 
         # Настраиваем зависимости для тестов
         if self._app:
@@ -407,7 +414,7 @@ class AsyncApiTestClient(AsyncClient):
         return routes
 
     def _find_similar_routes(
-            self, target: str, available_routes: list[str], min_similarity: float = 0.3
+        self, target: str, available_routes: list[str], min_similarity: float = 0.3
     ) -> list[tuple[str, float]]:
         """
         Найти похожие routes используя алгоритм диффа.
@@ -443,13 +450,13 @@ class AsyncApiTestClient(AsyncClient):
         return sorted(similarities, key=lambda x: x[1], reverse=True)
 
     async def force_auth(
-            self,
-            user: Optional["User"] = None,
-            email: Optional[str] = None,
-            email_verified: bool = True,
-            is_superuser: bool = False,
-            is_active: bool = True,
-            **user_kwargs: Any,
+        self,
+        user: Optional["User"] = None,
+        email: Optional[str] = None,
+        email_verified: bool = True,
+        is_superuser: bool = False,
+        is_active: bool = True,
+        **user_kwargs: Any,
     ) -> "User":
         """
         Принудительная аутентификация пользователя с гибкими опциями.
@@ -474,41 +481,14 @@ class AsyncApiTestClient(AsyncClient):
         if email:
             # В реальном приложении здесь бы был поиск в БД
             # Для тестов создаем пользователя с указанным email
-            from tests.factories.user_factory import VerifiedUserFactory
+            from apps.users.models.enums import UserStatus
+            from tests.factories.user_factories import UserFactory
 
-            self.auth_user = VerifiedUserFactory(email=email, **user_kwargs)
+            self.auth_user = UserFactory(email=email, status=UserStatus.ACTIVE, is_verified=True, **user_kwargs)
         elif user:
             self.auth_user = user
-            # Если у пользователя нет ID, создаем его в БД
-            if hasattr(self, "db_session") and self.db_session:
-                # Проверяем, есть ли пользователь в БД
-                from apps.users.repository import UserRepository
-
-                repo = UserRepository()
-                try:
-                    existing_user = await repo.get_by_email(self.db_session, email=user.email)
-                    if not existing_user:
-                        # Создаем пользователя в БД
-                        from apps.users.models import User
-
-                        db_user = User(
-                            id=user.id,
-                            email=user.email,
-                            username=user.username,
-                            full_name=user.full_name,
-                            hashed_password=user.hashed_password,
-                            is_active=user.is_active,
-                            is_verified=user.is_verified,
-                            is_superuser=user.is_superuser,
-                        )
-                        self.db_session.add(db_user)
-                        await self.db_session.commit()
-                        self.auth_user = db_user
-                    else:
-                        self.auth_user = existing_user
-                except Exception as e:
-                    logger.warning(f"Не удалось создать пользователя в БД: {e}")
-                    # Продолжаем с фабричным пользователем
+            # Для тестов просто используем переданного пользователя
+            # БД операции не нужны в тестовом клиенте
         else:
             # Создаем нового пользователя
             self.auth_user = await self._generate_user(
@@ -544,14 +524,8 @@ class AsyncApiTestClient(AsyncClient):
 
                 self.auth_user.id = uuid.uuid4()
 
-            access_token, refresh_token, jti = self._jwt_service.create_token_pair(
-                user_id=str(self.auth_user.id),
-                email=self.auth_user.email,
-                username=self.auth_user.username,
-                is_active=self.auth_user.is_active,
-                is_superuser=self.auth_user.is_superuser,
-                is_verified=getattr(self.auth_user, "is_verified", True),
-            )
+            # Создаем access токен (передаем пользователя целиком)
+            access_token = await self._jwt_service.create_access_token(user=self.auth_user)
         else:
             raise ValueError("Не удалось создать или найти пользователя для аутентификации")
 
@@ -569,7 +543,7 @@ class AsyncApiTestClient(AsyncClient):
 
     @staticmethod
     async def _generate_user(
-            is_superuser: bool = False, is_active: bool = True, is_email_verified: bool = True, **kwargs: Any
+        is_superuser: bool = False, is_active: bool = True, is_email_verified: bool = True, **kwargs: Any
     ) -> "User":
         """
         Генерация тестового пользователя.
@@ -583,14 +557,22 @@ class AsyncApiTestClient(AsyncClient):
         Returns:
             Созданный пользователь
         """
-        from tests.factories.user_factory import AdminUserFactory, SimpleUserFactory, VerifiedUserFactory
+        from apps.users.models.enums import UserRole, UserStatus
+        from tests.factories.user_factories import UserFactory
 
+        # Устанавливаем активный статус для прохождения can_login проверки
+        kwargs.setdefault("status", UserStatus.ACTIVE)
+        kwargs.setdefault("is_active", is_active)
+        kwargs.setdefault("is_verified", is_email_verified)
+
+        # Устанавливаем роль в зависимости от типа пользователя
         if is_superuser:
-            user = AdminUserFactory(is_active=is_active, **kwargs)
-        elif is_email_verified:
-            user = VerifiedUserFactory(is_active=is_active, **kwargs)
+            kwargs.setdefault("role", UserRole.ADMIN)
+            kwargs.setdefault("is_superuser", True)
         else:
-            user = SimpleUserFactory(is_active=is_active, is_verified=is_email_verified, **kwargs)
+            kwargs.setdefault("role", UserRole.USER)
+
+        user = UserFactory(**kwargs)
         return user
 
     def enable_performance_tracking(self) -> None:
@@ -618,15 +600,15 @@ class AsyncApiTestClient(AsyncClient):
         }
 
     async def request_with_retry(
-            self,
-            method: str,
-            url: str,
-            max_retries: int = 3,
-            retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
-            base_delay: float = 1.0,
-            max_delay: float = 60.0,
-            retryable_status_codes: Optional[List[int]] = None,
-            **kwargs,
+        self,
+        method: str,
+        url: str,
+        max_retries: int = 3,
+        retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        retryable_status_codes: Optional[List[int]] = None,
+        **kwargs,
     ) -> Response:
         """
         Выполнить запрос с retry логикой.
@@ -677,13 +659,13 @@ class AsyncApiTestClient(AsyncClient):
         raise RuntimeError("Retry logic error: no response or exception")
 
     def _calculate_retry_delay(
-            self, attempt: int, strategy: RetryStrategy, base_delay: float, max_delay: float
+        self, attempt: int, strategy: RetryStrategy, base_delay: float, max_delay: float
     ) -> float:
         """Вычислить задержку для retry."""
         if strategy == RetryStrategy.LINEAR:
             delay = base_delay * (attempt + 1)
         elif strategy == RetryStrategy.EXPONENTIAL:
-            delay = base_delay * (2 ** attempt)
+            delay = base_delay * (2**attempt)
         elif strategy == RetryStrategy.FIBONACCI:
             # Простая последовательность Фибоначчи
             fib = [1, 1]
@@ -702,7 +684,7 @@ class AsyncApiTestClient(AsyncClient):
         logger.info(f"API snapshots directory: {self._snapshots_dir}")
 
     async def create_api_snapshot(
-            self, endpoint: str, method: str = "GET", save_to_file: bool = True, **request_kwargs
+        self, endpoint: str, method: str = "GET", save_to_file: bool = True, **request_kwargs
     ) -> APISnapshot:
         """
         Создать снимок API endpoint для тестов регрессии.
@@ -903,7 +885,7 @@ class AsyncApiTestClient(AsyncClient):
         return responses
 
     async def authenticated_request(
-            self, method: str, url: str, auth_user: Optional["User"] = None, **kwargs: Any
+        self, method: str, url: str, auth_user: Optional["User"] = None, **kwargs: Any
     ) -> Response:
         """
         Выполнить аутентифицированный запрос.
@@ -2004,7 +1986,7 @@ class AsyncApiTestClient(AsyncClient):
             raise
 
     def _analyze_load_test_results(
-            self, config: LoadTestConfig, responses: List[Response], errors: List[str], start_time: float
+        self, config: LoadTestConfig, responses: List[Response], errors: List[str], start_time: float
     ) -> LoadTestResult:
         """Анализ результатов нагрузочного тестирования."""
         end_time = time.time()
@@ -2352,7 +2334,7 @@ class AsyncApiTestClient(AsyncClient):
             return {"data": self._generate_value_by_type(schema.get("type", "string"))}
 
     def _generate_test_code(
-            self, endpoint: OpenAPIEndpoint, test_data: Dict[str, Any], expected_status: int, test_type: str
+        self, endpoint: OpenAPIEndpoint, test_data: Dict[str, Any], expected_status: int, test_type: str
     ) -> str:
         """Генерация кода теста."""
         method = endpoint.method.lower()
@@ -2507,21 +2489,27 @@ class AsyncApiTestClient(AsyncClient):
         Returns:
             Настроенный JWT сервис для тестов
         """
-        from apps.auth.jwt_service import JWTService
+        from unittest.mock import Mock
+
+        from apps.auth.services.jwt_service import JWTService
         from core.config import get_settings
+
+        # Создаем mock-объекты для зависимостей
+        mock_refresh_token_repo = Mock()
+        mock_user_repo = Mock()
 
         # Получаем тестовые настройки
         settings = get_settings()
 
-        # Создаем новый экземпляр JWT сервиса
-        jwt_service = JWTService()
+        # Создаем новый экземпляр JWT сервиса с mock-зависимостями
+        jwt_service = JWTService(refresh_token_repo=mock_refresh_token_repo, user_repo=mock_user_repo)
 
-        # Применяем тестовые настройки
-        jwt_service.secret_key = settings.SECRET_KEY
-        jwt_service.algorithm = settings.ALGORITHM
+        # Применяем тестовые настройки (переопределяем приватные атрибуты)
+        jwt_service._secret_key = settings.SECRET_KEY
+        jwt_service._algorithm = settings.ALGORITHM
         # Увеличиваем время жизни токена для тестов (24 часа)
-        jwt_service.access_token_expire_minutes = 24 * 60  # 24 часа для тестов
-        jwt_service.refresh_token_expire_days = 30  # 30 дней для тестов
+        jwt_service._access_token_expire_minutes = 24 * 60  # 24 часа для тестов
+        jwt_service._refresh_token_expire_days = 30  # 30 дней для тестов
 
         return jwt_service
 
@@ -2533,7 +2521,7 @@ class AsyncApiTestClient(AsyncClient):
         if not self._app:
             return
 
-        from apps.auth.dependencies import get_jwt_service
+        from apps.auth.depends.services import get_jwt_service
 
         # Подменяем зависимость JWT сервиса
         def get_test_jwt_service():
@@ -2541,4 +2529,7 @@ class AsyncApiTestClient(AsyncClient):
 
             # Переопределяем зависимость в приложении
 
+        self._app.dependency_overrides[get_jwt_service] = get_test_jwt_service
+        self._app.dependency_overrides[get_jwt_service] = get_test_jwt_service
+        self._app.dependency_overrides[get_jwt_service] = get_test_jwt_service
         self._app.dependency_overrides[get_jwt_service] = get_test_jwt_service

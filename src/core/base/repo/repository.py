@@ -14,6 +14,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import InstrumentedAttribute, aliased, joinedload
 
 from core.base.models import BaseModel as SQLAlchemyBaseModel
+from core.exceptions import CoreRepositoryValueError
 from tools.pydantic import BaseModel as PydanticBaseModel
 
 from .cache import CacheManager, get_default_cache_manager
@@ -249,6 +250,10 @@ class QueryBuilder:
         ```
         """
         try:
+            # Исключаем специальные параметры которые не являются полями модели
+            special_params = ["include_deleted"]
+            filters = {k: v for k, v in filters.items() if k not in special_params}
+
             for raw_key, value in filters.items():
                 if value is None and "__isnull" not in raw_key and "__isnotnull" not in raw_key:
                     # Пропускаем None значения, кроме явных проверок на NULL
@@ -741,7 +746,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         # Проверяем поле
         if not hasattr(self._model, field):
-            raise ValueError(f"Поле '{field}' не найдено в модели {self._model.__name__}")
+            raise CoreRepositoryValueError(operation="aggregate", field=field, value=self._model.__name__)
 
         field_attr = getattr(self._model, field)
 
@@ -861,7 +866,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         ```
         """
         if not hasattr(self._model, cursor_field):
-            raise ValueError(f"Поле курсора '{cursor_field}' не найдено в модели {self._model.__name__}")
+            raise CoreRepositoryValueError(operation="paginate_cursor", field=cursor_field, value=self._model.__name__)
 
         cursor_attr = getattr(self._model, cursor_field)
 
@@ -1037,7 +1042,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
             # Validate required fields
             if not create_data:
-                raise ValueError("Data for creation cannot be empty")
+                raise CoreRepositoryValueError(operation="create", field="data", value="empty")
 
             db_obj = self._model(**create_data)
             self._db.add(db_obj)

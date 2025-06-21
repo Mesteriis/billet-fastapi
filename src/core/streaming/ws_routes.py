@@ -5,10 +5,12 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 from core.config import get_settings
+from core.exceptions import CoreStreamingAPIException
+from core.exceptions.core_base import CoreStreamingValueError
 
 from .auth import WSAuthenticator, WSAuthError, get_ws_auth
 from .connection_manager import connection_manager
@@ -136,7 +138,7 @@ async def process_websocket_command(
         elif action == "subscribe":
             channel = command.data.get("channel")
             if not channel:
-                raise ValueError("Не указан канал для подписки")
+                raise CoreStreamingValueError("websocket", "channel", "empty or missing")
 
             await connection_manager.subscribe_to_channel(connection_id, channel)
             return WSResponse(
@@ -162,7 +164,7 @@ async def process_websocket_command(
             )
 
         else:
-            raise ValueError(f"Неизвестная команда: {action}")
+            raise CoreStreamingValueError("websocket", "action", action)
 
     except Exception as e:
         logger.error(f"Error processing command {action}: {e}")
@@ -185,7 +187,7 @@ async def broadcast_message(
 ):
     """Рассылка сообщения всем WebSocket соединениям."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     await connection_manager.broadcast_to_all(message.message, exclude_connections=message.exclude_connections)
 
@@ -198,7 +200,7 @@ async def send_to_channel(
 ):
     """Отправка сообщения в канал."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     await connection_manager.broadcast_to_channel(
         channel_message.channel, channel_message.message, persist=channel_message.persist
@@ -213,7 +215,7 @@ async def send_to_user(
 ):
     """Отправка сообщения конкретному пользователю."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     sent_count = await connection_manager.send_to_user(user_id, message)
 
@@ -229,7 +231,7 @@ async def send_notification(
 ):
     """Отправка уведомления в канал или пользователю."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     message = WSMessage(id=str(uuid.uuid4()), type=MessageType.NOTIFICATION, content=notification.dict())
 
@@ -248,7 +250,7 @@ async def send_notification(
 async def get_active_connections(auth_data: dict[str, Any] = Depends(lambda: {"authenticated": True})):
     """Получение списка активных соединений."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     return {
         "websocket_connections": list(connection_manager.ws_connections.keys()),
@@ -261,7 +263,7 @@ async def get_active_connections(auth_data: dict[str, Any] = Depends(lambda: {"a
 async def close_connection(connection_id: str, auth_data: dict[str, Any] = Depends(lambda: {"authenticated": True})):
     """Принудительное закрытие соединения."""
     if not settings.WEBSOCKET_ENABLED:
-        raise HTTPException(status_code=503, detail="WebSocket отключен")
+        raise CoreStreamingAPIException("websocket", "WebSocket отключен", status_code=503)
 
     # Закрываем WebSocket соединение
     if connection_id in connection_manager.ws_connections:
@@ -273,7 +275,7 @@ async def close_connection(connection_id: str, auth_data: dict[str, Any] = Depen
         await connection_manager.disconnect_sse(connection_id)
         return {"success": True, "message": f"SSE соединение {connection_id} закрыто"}
 
-    raise HTTPException(status_code=404, detail="Соединение не найдено")
+    raise CoreStreamingAPIException("websocket", "Соединение не найдено", status_code=404)
 
 
 @router.get("/test-page", response_class=HTMLResponse, summary="Тестовая страница WebSocket")

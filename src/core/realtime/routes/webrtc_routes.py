@@ -5,9 +5,10 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import Field
 
+from core.exceptions import CoreRealtimeAPIException
 from tools.pydantic import BaseModel
 
 from ..auth import optional_auth, require_auth
@@ -289,7 +290,11 @@ async def handle_peer_signal_websocket(websocket: WebSocket, peer_id: str, data:
         )
     else:
         await websocket.send_json(
-            {"type": "error", "message": f"Пир {target_peer_id} не найден", "timestamp": datetime.now(tz=utc)().isoformat()}
+            {
+                "type": "error",
+                "message": f"Пир {target_peer_id} не найден",
+                "timestamp": datetime.now(tz=utc)().isoformat(),
+            }
         )
 
 
@@ -358,7 +363,7 @@ async def create_webrtc_room(request: CreateRoomRequest, auth_data=Depends(optio
         room_id = request.room_id or f"room_{uuid4()}"
 
         if room_id in webrtc_rooms:
-            raise HTTPException(status_code=409, detail="Комната уже существует")
+            raise CoreRealtimeAPIException(status_code=409, detail="Комната уже существует")
 
         room = WebRTCRoom(
             room_id=room_id,
@@ -374,7 +379,7 @@ async def create_webrtc_room(request: CreateRoomRequest, auth_data=Depends(optio
 
     except Exception as e:
         logger.error(f"Ошибка создания WebRTC комнаты: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise CoreRealtimeAPIException(status_code=500, detail=str(e))
 
 
 @router.get("/rooms")
@@ -402,7 +407,7 @@ async def list_webrtc_rooms():
 async def get_webrtc_room(room_id: str):
     """Получить информацию о WebRTC комнате."""
     if room_id not in webrtc_rooms:
-        raise HTTPException(status_code=404, detail="Комната не найдена")
+        raise CoreRealtimeAPIException(status_code=404, detail="Комната не найдена")
 
     room = webrtc_rooms[room_id]
 
@@ -416,13 +421,13 @@ async def get_webrtc_room(room_id: str):
 async def update_webrtc_room(room_id: str, request: UpdateRoomSettingsRequest, auth_data=Depends(optional_auth)):
     """Обновить настройки WebRTC комнаты."""
     if room_id not in webrtc_rooms:
-        raise HTTPException(status_code=404, detail="Комната не найдена")
+        raise CoreRealtimeAPIException(status_code=404, detail="Комната не найдена")
 
     room = webrtc_rooms[room_id]
 
     # Проверяем права (только создатель может изменять)
     if auth_data and room.created_by and room.created_by != auth_data.get("user_id"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+        raise CoreRealtimeAPIException(status_code=403, detail="Недостаточно прав")
 
     # Обновляем настройки
     if request.name is not None:
@@ -450,13 +455,13 @@ async def update_webrtc_room(room_id: str, request: UpdateRoomSettingsRequest, a
 async def delete_webrtc_room(room_id: str, auth_data=Depends(optional_auth)):
     """Удалить WebRTC комнату."""
     if room_id not in webrtc_rooms:
-        raise HTTPException(status_code=404, detail="Комната не найдена")
+        raise CoreRealtimeAPIException(status_code=404, detail="Комната не найдена")
 
     room = webrtc_rooms[room_id]
 
     # Проверяем права (только создатель может удалить)
     if auth_data and room.created_by and room.created_by != auth_data.get("user_id"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+        raise CoreRealtimeAPIException(status_code=403, detail="Недостаточно прав")
 
     # Уведомляем участников
     await broadcast_to_room(
@@ -495,7 +500,7 @@ async def send_webrtc_signal(request: WebRTCSignalRequest, auth_data=Depends(opt
         # Отправляем сигнал целевому пиру
         target_connections = await connection_manager.get_user_connections(request.target_peer_id)
         if not target_connections:
-            raise HTTPException(status_code=404, detail="Целевой пир не найден")
+            raise CoreRealtimeAPIException(status_code=404, detail="Целевой пир не найден")
 
         sent_count = 0
         for connection_id in target_connections:
@@ -512,7 +517,7 @@ async def send_webrtc_signal(request: WebRTCSignalRequest, auth_data=Depends(opt
 
     except Exception as e:
         logger.error(f"Ошибка отправки WebRTC сигнала: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise CoreRealtimeAPIException(status_code=500, detail=str(e))
 
 
 @router.get("/connections")

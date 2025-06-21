@@ -98,6 +98,23 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # Проверка импортов между приложениями
+      - id: inter-app-imports-check
+        name: Inter-App Imports Check
+        entry: python scripts/inter_app_imports_linter.py
+        language: system
+        args: ["src/apps"]
+        pass_filenames: false
+        always_run: true
+
+      # Проверка языка и формата docstring
+      - id: docstring-language-check
+        name: Docstring Language & Format Check
+        entry: python scripts/check_docstring_language.py
+        language: system
+        files: \.py$
+        exclude: ^(tests/|migrations/|scripts/|__pycache__/|.*/__init__\.py|src/main\.py|src/cli\.py)
+
   # Проверка документации
   - repo: local
     hooks:
@@ -166,6 +183,7 @@ ci:
       cleanup-project-dry,
       cleanup-project-full,
       cleanup-project-verbose,
+      inter-app-imports-check,
     ]
   submodules: false
 

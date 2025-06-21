@@ -5,10 +5,11 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from core.config import get_settings
+from core.exceptions import CoreStreamingAPIException
 
 from .auth import WSAuthenticator, WSAuthError, get_ws_auth, optional_auth
 from .connection_manager import connection_manager
@@ -30,7 +31,7 @@ async def sse_endpoint(
 ):
     """SSE соединение."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     connection_id = str(uuid.uuid4())
 
@@ -109,10 +110,10 @@ async def sse_endpoint(
         )
 
     except WSAuthError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise CoreStreamingAPIException("sse", str(e), status_code=401)
     except Exception as e:
         logger.error(f"SSE connection error: {e}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+        raise CoreStreamingAPIException("sse", "Внутренняя ошибка сервера", status_code=500)
 
 
 @router.post("/send-to-channel")
@@ -126,7 +127,7 @@ async def send_sse_to_channel(
 ):
     """Отправка SSE сообщения в канал."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     # Создаем SSE сообщение
     sse_message = SSEMessage(
@@ -152,10 +153,10 @@ async def send_sse_to_user(
 ):
     """Отправка SSE сообщения пользователю."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     # Создаем сообщение
-    ws_message = WSMessage(id=event_id or str(uuid.uuid4()), type=MessageType.JSON, content=data, recipient_id=user_id)
+    ws_message = WSMessage(id=event_id or str(uuid.uuid4()), type=MessageType.JSON, data=data)
 
     sent_count = await connection_manager.send_to_user(user_id, ws_message)
 
@@ -173,10 +174,10 @@ async def broadcast_sse(
 ):
     """Рассылка SSE события всем соединениям."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     # Создаем сообщение
-    ws_message = WSMessage(id=event_id or str(uuid.uuid4()), type=MessageType.BROADCAST, content=data)
+    ws_message = WSMessage(id=event_id or str(uuid.uuid4()), type=MessageType.BROADCAST, data=data)
 
     await connection_manager.broadcast_to_all(ws_message, exclude_connections=exclude_connections or [])
 
@@ -192,7 +193,7 @@ async def send_sse_notification(
 ):
     """Отправка уведомления через SSE."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     # Создаем сообщение уведомления
     ws_message = WSMessage(id=str(uuid.uuid4()), type=MessageType.NOTIFICATION, content=notification.dict())
@@ -212,7 +213,7 @@ async def send_sse_notification(
 async def get_sse_stats(user_data: dict[str, Any] = Depends(optional_auth)):
     """Получение статистики SSE соединений."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     stats = connection_manager.get_connections_stats()
     return {"sse": stats["sse"], "channels": stats["channels"]}
@@ -222,13 +223,13 @@ async def get_sse_stats(user_data: dict[str, Any] = Depends(optional_auth)):
 async def close_sse_connection(connection_id: str, user_data: dict[str, Any] = Depends(optional_auth)):
     """Закрытие SSE соединения."""
     if not settings.SSE_ENABLED:
-        raise HTTPException(status_code=503, detail="SSE отключен")
+        raise CoreStreamingAPIException("sse", "SSE отключен", status_code=503)
 
     if connection_id in connection_manager.sse_connections:
         await connection_manager.disconnect_sse(connection_id)
         return {"success": True, "message": f"SSE соединение {connection_id} закрыто"}
     else:
-        raise HTTPException(status_code=404, detail="SSE соединение не найдено")
+        raise CoreStreamingAPIException("sse", "SSE соединение не найдено", status_code=404)
 
 
 @router.get("/test")

@@ -5,8 +5,9 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 
+from core.exceptions import CoreMessagingAPIException
 from tools.pydantic import BaseModel
 
 from .broker import create_faststream_app, get_broker
@@ -114,7 +115,7 @@ def create_messaging_router():
             return MessageResponse(success=True, message=f"Уведомление отправлено пользователю {request.user_id}")
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления пользователю: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise CoreMessagingAPIException("rabbitmq", str(e), status_code=500)
 
     @router.post("/admin-notification", response_model=MessageResponse)
     async def send_admin_notification(
@@ -126,7 +127,7 @@ def create_messaging_router():
             return MessageResponse(success=True, message="Админское уведомление отправлено")
         except Exception as e:
             logger.error(f"Ошибка отправки админского уведомления: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise CoreMessagingAPIException("rabbitmq", str(e), status_code=500)
 
     @router.post("/order-processing", response_model=MessageResponse)
     async def send_order_processing(
@@ -140,7 +141,7 @@ def create_messaging_router():
             return MessageResponse(success=True, message=f"Сообщение о заказе {request.order_id} отправлено")
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения о заказе: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise CoreMessagingAPIException("rabbitmq", str(e), status_code=500)
 
     @router.post("/system-event", response_model=MessageResponse)
     async def send_system_event(request: SystemEventRequest, client: MessageClient = Depends(get_message_client)):
@@ -152,7 +153,7 @@ def create_messaging_router():
             return MessageResponse(success=True, message=f"Системное событие '{request.event_name}' отправлено")
         except Exception as e:
             logger.error(f"Ошибка отправки системного события: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise CoreMessagingAPIException("rabbitmq", str(e), status_code=500)
 
     @router.post("/custom-message", response_model=MessageResponse)
     async def send_custom_message(request: CustomMessageRequest, client: MessageClient = Depends(get_message_client)):
@@ -164,7 +165,7 @@ def create_messaging_router():
             return MessageResponse(success=True, message=f"Сообщение отправлено в exchange '{request.exchange_name}'")
         except Exception as e:
             logger.error(f"Ошибка отправки произвольного сообщения: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise CoreMessagingAPIException("rabbitmq", str(e), status_code=500)
 
     @router.get("/health")
     async def messaging_health():

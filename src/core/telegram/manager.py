@@ -13,6 +13,8 @@ from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 from aiohttp import web
 
+from core.exceptions.core_base import CoreTelegramValueError
+
 from .config import BotMode, TelegramBotConfig, TelegramBotsConfig
 from .decorators import get_command_registry
 from .templates import get_template_manager
@@ -130,7 +132,7 @@ class TelegramBotInstance:
     async def start_polling(self) -> None:
         """Запуск бота в режиме polling."""
         if self.config.mode != BotMode.POLLING:
-            raise ValueError(f"Бот {self.config.name} не настроен для polling")
+            raise CoreTelegramValueError("start_polling", "mode", self.config.mode)
 
         if self._polling_task and not self._polling_task.done():
             logger.warning(f"Polling для бота {self.config.name} уже запущен")
@@ -140,7 +142,7 @@ class TelegramBotInstance:
 
         try:
             if self.bot is None or self.dispatcher is None:
-                raise ValueError(f"Бот {self.config.name} не инициализирован")
+                raise CoreTelegramValueError("start_polling", "bot_state", "not_initialized")
 
             # Пропускаем накопившиеся обновления если нужно
             if self.config.drop_pending_updates:
@@ -175,10 +177,10 @@ class TelegramBotInstance:
     async def set_webhook(self, webhook_url: str) -> None:
         """Установка webhook."""
         if self.config.mode != BotMode.WEBHOOK:
-            raise ValueError(f"Бот {self.config.name} не настроен для webhook")
+            raise CoreTelegramValueError("set_webhook", "mode", self.config.mode)
 
         if self.bot is None:
-            raise ValueError(f"Бот {self.config.name} не инициализирован")
+            raise CoreTelegramValueError("set_webhook", "bot_state", "not_initialized")
 
         try:
             await self.bot.set_webhook(
@@ -195,7 +197,7 @@ class TelegramBotInstance:
     async def delete_webhook(self) -> None:
         """Удаление webhook."""
         if self.bot is None:
-            raise ValueError(f"Бот {self.config.name} не инициализирован")
+            raise CoreTelegramValueError("delete_webhook", "bot_state", "not_initialized")
 
         try:
             await self.bot.delete_webhook(drop_pending_updates=True)
@@ -203,6 +205,7 @@ class TelegramBotInstance:
 
         except Exception as e:
             logger.error(f"Ошибка удаления webhook для бота {self.config.name}: {e}")
+            raise
 
     async def close(self) -> None:
         """Закрытие бота."""

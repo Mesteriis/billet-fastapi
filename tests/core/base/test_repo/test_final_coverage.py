@@ -13,6 +13,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from core.base.repo.cache import CacheManager, SimpleMemoryCache, cache_result
 from core.base.repo.repository import BaseRepository, QueryBuilder
+from core.exceptions.core_base import CoreRepositoryValueError
 
 
 @pytest.mark.asyncio
@@ -161,10 +162,10 @@ async def test_aggregate_field_not_found(setup_test_models):
     repo = BaseRepository(TestPost, setup_test_models)  # type: ignore
 
     # Агрегация по несуществующему полю
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(CoreRepositoryValueError) as exc_info:
         await repo.aggregate("nonexistent_field", operations=["count"])
 
-    assert "не найдено в модели" in str(exc_info.value)
+    assert "aggregate operation" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -175,10 +176,10 @@ async def test_pagination_cursor_field_not_found(setup_test_models):
     repo = BaseRepository(TestUser, setup_test_models)  # type: ignore
 
     # Пагинация с несуществующим cursor_field
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(CoreRepositoryValueError) as exc_info:
         await repo.paginate_cursor(cursor_field="nonexistent_field")
 
-    assert "не найдено в модели" in str(exc_info.value)
+    assert "paginate_cursor operation" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -211,10 +212,11 @@ async def test_create_with_empty_data(setup_test_models):
     repo = BaseRepository(TestUser, setup_test_models)  # type: ignore
 
     # Попытка создать с пустыми данными
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(CoreRepositoryValueError) as exc_info:
         await repo.create({})
 
-    assert "Data for creation cannot be empty" in str(exc_info.value)
+    assert "create operation" in str(exc_info.value)
+    assert "empty" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

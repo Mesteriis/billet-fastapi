@@ -2,24 +2,15 @@
 Фабрики для создания тестовых данных.
 """
 
-from .data_factories import (
-    AdminUserDataFactory,
-    BaseDataFactory,
-    ComplexFilterDataFactory,
-    DataFactoryManager,
-    PaginationDataFactory,
-    PredictableUserDataFactory,
-    SpecializedDataFactory,
-    UserDataFactory,
-)
+from .auth_factories import OrbitalTokenFactory, RefreshTokenFactory, UserSessionFactory
+from .base_factories import BaseTestFactory
+from .user_factories import UserFactory, UserProfileFactory
 
 __all__ = [
-    "BaseDataFactory",
-    "UserDataFactory",
-    "AdminUserDataFactory",
-    "PredictableUserDataFactory",
-    "ComplexFilterDataFactory",
-    "PaginationDataFactory",
-    "SpecializedDataFactory",
-    "DataFactoryManager",
+    "BaseTestFactory",
+    "UserFactory",
+    "UserProfileFactory",
+    "OrbitalTokenFactory",
+    "RefreshTokenFactory",
+    "UserSessionFactory",
 ]

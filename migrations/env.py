@@ -17,10 +17,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
+from apps.auth.models.auth_models import OrbitalToken, RefreshToken, UserSession
+
+# Импортируем все модели для автогенерации
+from apps.users.models.user_models import User, UserProfile
+
 # Импорт всех моделей для автогенерации
-from apps.auth.models import RefreshToken
-from apps.base.models import BaseModel
-from apps.users.models import User
+from core.base.models import BaseModel
 from core.config import get_settings
 
 # add your model's MetaData object here

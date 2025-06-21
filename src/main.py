@@ -11,7 +11,7 @@ from core.config import get_settings
 from core.taskiq_client import broker
 from core.telemetry import instrument_fastapi_app, setup_telemetry
 
-# Импортируем телеграм компоненты
+# Import telegram components
 try:
     from core.telegram import TelegramBotsConfig
     from core.telegram.handlers.admin import register_admin_handlers
@@ -22,7 +22,7 @@ try:
 except ImportError:
     TELEGRAM_AVAILABLE = False
 
-# Импортируем realtime компоненты
+# Import realtime components
 try:
     from core.realtime import connection_manager, sse_router, webrtc_router, ws_router
 
@@ -30,7 +30,7 @@ try:
 except ImportError:
     REALTIME_AVAILABLE = False
 
-# Импортируем messaging компоненты
+# Import messaging components
 try:
     from core.messaging import get_message_client
 
@@ -41,31 +41,48 @@ except ImportError:
 
 settings = get_settings()
 
-# Настройка OpenTelemetry трассировки
+# Setup OpenTelemetry tracing
 setup_telemetry()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Управление жизненным циклом приложения.
+    """Application lifespan context manager.
+
+    Handles startup and shutdown events for all application services including:
+    - TaskIQ broker initialization
+    - Telegram bots setup and polling
+    - Background services management
 
     Args:
-        app: Экземпляр FastAPI приложения.
+        app (FastAPI): The FastAPI application instance
 
     Yields:
-        None: После инициализации всех компонентов.
+        None: Control is yielded back to the application after startup
+
+    Raises:
+        Exception: If critical services fail to initialize
+
+    Example:
+        Used automatically by FastAPI::
+
+            app = FastAPI(lifespan=lifespan)
+
+    Note:
+        This function is called automatically by FastAPI during
+        application startup and shutdown.
     """
     # Startup
     await broker.startup()
 
-    # Инициализация Telegram ботов
+    # Initialize Telegram bots
     if TELEGRAM_AVAILABLE and settings.TELEGRAM_BOTS_ENABLED:
         try:
-            # Регистрируем обработчики команд
+            # Register command handlers
             register_basic_handlers()
             register_admin_handlers()
 
-            # Инициализируем и запускаем ботов
+            # Initialize and start bots
             bot_manager = get_bot_manager()
             await bot_manager.initialize_bots()
             await bot_manager.start_polling_bots()
@@ -73,20 +90,20 @@ async def lifespan(app: FastAPI):
             await bot_manager.start_webhook_server()
 
         except Exception as e:
-            print(f"Ошибка инициализации Telegram ботов: {e}")
+            print(f"Error initializing Telegram bots: {e}")
 
     yield
 
     # Shutdown
     await broker.shutdown()
 
-    # Остановка Telegram ботов
+    # Stop Telegram bots
     if TELEGRAM_AVAILABLE and settings.TELEGRAM_BOTS_ENABLED:
         try:
             bot_manager = get_bot_manager()
             await bot_manager.stop_all_bots()
         except Exception as e:
-            print(f"Ошибка остановки Telegram ботов: {e}")
+            print(f"Error stopping Telegram bots: {e}")
 
 
 app = FastAPI(
@@ -96,32 +113,52 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Инструментация FastAPI для OpenTelemetry
+# Instrument FastAPI for OpenTelemetry
 instrument_fastapi_app(app)
 
-# Подключаем роуты для аутентификации и пользователей
-# from apps.auth.routes import router as auth_router
-# from apps.users.routes import router as users_router
+# Connect API routes
+from apps.api_router import api_router
 
-# app.include_router(auth_router, prefix=settings.API_V1_STR)
-# app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(api_router)
 
-# Подключаем Realtime роутеры (WebSocket, SSE, WebRTC)
+# Connect Realtime routers (WebSocket, SSE, WebRTC)
 if REALTIME_AVAILABLE:
     if settings.WEBSOCKET_ENABLED:
         app.include_router(ws_router)
     if settings.SSE_ENABLED:
         app.include_router(sse_router)
-    if settings.WEBRTC_ENABLED:  # WebRTC по умолчанию включен
+    if settings.WEBRTC_ENABLED:  # WebRTC enabled by default
         app.include_router(webrtc_router)
 
 
 @app.get("/")
 async def root() -> dict[str, Any]:
-    """Корневой эндпоинт.
+    """Root endpoint providing application information.
+
+    Returns basic information about the application and available services,
+    including enabled features and API endpoints.
 
     Returns:
-        dict: Информация о приложении и доступных сервисах.
+        dict[str, Any]: Application information and service status
+
+    Example:
+        GET request::
+
+            curl http://localhost:8000/
+
+        Response::
+
+            {
+                "message": "Welcome to Mango Message",
+                "version": "1.0.0",
+                "taskiq_enabled": true,
+                "telegram_enabled": true,
+                "endpoints": {
+                    "tasks": "/tasks",
+                    "docs": "/docs",
+                    "websocket": "/realtime/ws"
+                }
+            }
     """
     response: dict[str, Any] = {
         "message": f"Welcome to {settings.PROJECT_NAME}",
@@ -135,7 +172,7 @@ async def root() -> dict[str, Any]:
         "endpoints": {"tasks": "/tasks", "docs": "/docs", "redoc": "/redoc"},
     }
 
-    # Добавляем Realtime эндпоинты
+    # Add Realtime endpoints
     if REALTIME_AVAILABLE:
         if settings.WEBSOCKET_ENABLED:
             response["endpoints"]["websocket"] = "/realtime/ws"
@@ -147,11 +184,11 @@ async def root() -> dict[str, Any]:
             response["endpoints"]["webrtc"] = "/realtime/webrtc"
             response["endpoints"]["webrtc_signaling"] = "/realtime/webrtc/signaling"
 
-    # Добавляем Messaging эндпоинты
+    # Add Messaging endpoints
     if MESSAGING_AVAILABLE:
         response["endpoints"]["messaging"] = "/messaging"
 
-    # Добавляем информацию о Telegram ботах
+    # Add Telegram bots information
     if TELEGRAM_AVAILABLE and settings.TELEGRAM_BOTS_ENABLED:
         try:
             bot_manager = get_bot_manager()
@@ -165,9 +202,30 @@ async def root() -> dict[str, Any]:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Проверка здоровья приложения.
+    """Health check endpoint.
+
+    Provides basic health status information for monitoring and load balancers.
 
     Returns:
-        dict: Статус здоровья приложения.
+        dict[str, str]: Health status information
+
+    Example:
+        GET request::
+
+            curl http://localhost:8000/health
+
+        Response::
+
+            {
+                "status": "healthy",
+                "app": "Mango Message",
+                "version": "1.0.0"
+            }
+
+    Note:
+        This endpoint is commonly used by:
+        - Load balancers for health checks
+        - Container orchestrators (Docker, Kubernetes)
+        - Monitoring systems
     """
     return {"status": "healthy", "app": settings.PROJECT_NAME, "version": settings.VERSION}

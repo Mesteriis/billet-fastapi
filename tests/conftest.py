@@ -1,3 +1,13 @@
+"""
+Главный conftest.py для всех тестов.
+
+Настройка:
+- AsyncApiTestClient для API тестов
+- Фабрики с правильной настройкой сессий
+- База данных для тестов
+- Логирование
+"""
+
 import asyncio
 import logging
 import os
@@ -10,14 +20,23 @@ import alembic.config
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from core.database import get_db
-from main import app as main_app
-from main import settings
-from tests.utils_test.api_test_client import AsyncApiTestClient
+from apps.auth.models.auth_models import OrbitalToken, RefreshToken, UserSession  # noqa: F401
+
+# Импорты моделей
+from apps.users.models.user_models import User, UserProfile  # noqa: F401
+from core.database import get_db  # noqa: F401
+from main import app  # noqa: F401
+from main import settings  # noqa: F401
+from tests.factories.auth_factories import OrbitalTokenFactory, RefreshTokenFactory, UserSessionFactory
+from tests.factories.base_factories import setup_factory_model, setup_factory_session
+from tests.factories.user_factories import UserFactory, UserProfileFactory
+from tests.utils_test.api_test_client import AsyncApiTestClient  # noqa: F401
 
 # Настройка логирования для тестов - максимально агрессивный подход
 # Полностью отключаем все логирование кроме CRITICAL
@@ -27,6 +46,9 @@ logging.disable(logging.INFO)
 logger = logging.getLogger("test_session")
 logger.setLevel(logging.INFO)
 logger.disabled = False  # Принудительно включаем наш логгер
+
+# URL для тестовой БД (используем in-memory SQLite для простоты)
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus):
@@ -133,46 +155,10 @@ def cleanup_project_artifacts():
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Event loop with proper isolation for asyncpg compatibility"""
-    # Создаем новую политику event loop для изоляции
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-
-    # Устанавливаем loop как текущий для asyncpg
-    asyncio.set_event_loop(loop)
-    old_loop = asyncio.get_event_loop()
-
-    try:
-        yield loop
-    finally:
-        # Корректно закрываем loop
-        try:
-            # Отменяем все pending tasks
-            pending = asyncio.all_tasks(loop)
-            if pending:
-                for task in pending:
-                    if not task.done():
-                        task.cancel()
-                # Ждем завершения отмененных задач
-                if pending:
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-
-            # Закрываем генераторы
-            loop.run_until_complete(loop.shutdown_asyncgens())
-
-            # Закрываем default executor
-            if hasattr(loop, "shutdown_default_executor"):
-                loop.run_until_complete(loop.shutdown_default_executor())
-        except Exception as e:
-            logger.warning(f"Warning during loop cleanup: {e}")
-        finally:
-            # Восстанавливаем предыдущий loop если он был
-            if old_loop != loop:
-                try:
-                    asyncio.set_event_loop(old_loop)
-                except:
-                    pass
-            loop.close()
+    """Создаем event loop для всей сессии тестов."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture(scope="session")
@@ -207,7 +193,7 @@ async def postgres_container():
 
 @pytest_asyncio.fixture(scope="function")
 async def async_engine(postgres_container, event_loop):
-    """Асинхронный движок БД для тестов."""
+    """Создаем async engine для тестов."""
     uri = postgres_container.get_connection_url()
 
     # Конвертируем PostgreSQL URL в asyncpg формат
@@ -257,8 +243,124 @@ async def async_engine(postgres_container, event_loop):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Асинхронная сессия БД для тестов."""
+async def setup_alembic_migrations(async_engine) -> AsyncGenerator[None, None]:
+    """
+    Применяет миграции Alembic к тестовой базе данных.
+
+    Автоматически:
+    - Применяет все миграции (upgrade head)
+    - Очищает данные после тестов
+    - Откатывает миграции при необходимости
+    """
+    import os
+    import tempfile
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    # Проверяем наличие миграций
+    project_root = Path(__file__).parent.parent
+    migrations_dir = project_root / "migrations"
+    versions_dir = migrations_dir / "versions"
+
+    has_migrations = migrations_dir.exists() and versions_dir.exists() and any(versions_dir.glob("*.py"))
+
+    if has_migrations:
+        logger.info("📋 Найдены миграции Alembic, применяю...")
+        # Пытаемся применить миграции Alembic
+        try:
+            # Создаем конфиг для Alembic
+            alembic_cfg = Config()
+            alembic_cfg.set_main_option("script_location", str(migrations_dir))
+            alembic_cfg.set_main_option("sqlalchemy.url", str(async_engine.url))
+
+            # Применяем миграции синхронно
+            from sqlalchemy import create_engine
+
+            sync_url = str(async_engine.url).replace("+asyncpg", "")
+            sync_engine = create_engine(sync_url)
+
+            with sync_engine.begin() as conn:
+                alembic_cfg.attributes["connection"] = conn
+
+                # Проверяем состояние миграций
+                try:
+                    current_rev = command.current(alembic_cfg)
+                    logger.debug(f"Current migration: {current_rev}")
+                except Exception:
+                    # Если таблицы alembic_version нет, создаем и помечаем как base
+                    command.stamp(alembic_cfg, "base")
+
+                # Применяем все миграции
+                command.upgrade(alembic_cfg, "head")
+
+            sync_engine.dispose()
+            logger.info("✅ Миграции Alembic успешно применены к тестовой БД")
+
+            yield
+
+            # Очистка данных после тестов
+            async with async_engine.begin() as conn:
+                await _cleanup_app_data(conn)
+
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка применения миграций Alembic: {e}")
+            # Fallback к созданию таблиц через metadata
+            await _create_tables_via_metadata(async_engine)
+            yield
+    else:
+        # Нет миграций - используем fallback
+        logger.info("📋 Миграции не найдены, создаю таблицы через SQLAlchemy metadata")
+        await _create_tables_via_metadata(async_engine)
+        yield
+
+
+async def _create_tables_via_metadata(async_engine) -> None:
+    """Создает таблицы приложения через SQLAlchemy metadata (fallback)."""
+    try:
+        from apps.auth.models.auth_models import OrbitalToken, RefreshToken, UserSession
+        from apps.users.models.user_models import User, UserProfile
+
+        async with async_engine.begin() as conn:
+            # Создаем все таблицы приложения
+            await conn.run_sync(User.metadata.create_all)
+
+        logger.info("✅ Таблицы созданы через SQLAlchemy metadata")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблиц: {e}")
+        raise
+
+
+async def _cleanup_app_data(conn) -> None:
+    """Очищает данные приложения между тестами (без удаления схемы)."""
+    try:
+        # Отключаем foreign key constraints для быстрой очистки
+        await conn.execute(text("SET session_replication_role = replica"))
+
+        # Очищаем таблицы приложения в правильном порядке (обратном FK)
+        cleanup_tables = ["orbital_tokens", "user_sessions", "refresh_tokens", "user_profiles", "users"]
+
+        for table in cleanup_tables:
+            try:
+                await conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+            except Exception as e:
+                # Игнорируем ошибки для несуществующих таблиц
+                logger.debug(f"Cleanup info for {table}: {e}")
+
+        # Включаем constraints обратно
+        await conn.execute(text("SET session_replication_role = DEFAULT"))
+
+        logger.debug("✅ Данные приложения очищены")
+
+    except Exception as e:
+        logger.debug(f"Cleanup info: {e}")
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_session(async_engine, setup_alembic_migrations) -> AsyncGenerator[AsyncSession, None]:
+    """Создаем async session для каждого теста."""
     async_session_maker = async_sessionmaker(
         bind=async_engine,
         class_=AsyncSession,
@@ -269,6 +371,7 @@ async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
 
     async with async_session_maker() as session:
         yield session
+        await session.rollback()  # Откатываем изменения после каждого теста
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -352,15 +455,17 @@ async def _cleanup_test_data(session: AsyncSession) -> None:
 @pytest.fixture(scope="function")
 def app(async_session) -> Generator[FastAPI, None, None]:
     """FastAPI приложение с переопределенной БД."""
+    from core.database import get_db
+    from main import app as fastapi_app
 
     async def override_get_db():
         yield async_session
 
-    main_app.dependency_overrides[get_db] = override_get_db
+    fastapi_app.dependency_overrides[get_db] = override_get_db
     try:
-        yield main_app
+        yield fastapi_app
     finally:
-        main_app.dependency_overrides.clear()
+        fastapi_app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -371,18 +476,6 @@ async def api_client(app: FastAPI, async_session) -> AsyncGenerator[AsyncApiTest
 
 
 # === Фабрики для тестовых данных ===
-
-
-@pytest.fixture
-def user_factory(setup_test_models):
-    """Фабрика для создания пользователей."""
-    try:
-        from tests.core.base.test_repo.factories import UserFactory
-
-        UserFactory._meta.sqlalchemy_session = setup_test_models  # type: ignore
-        return UserFactory
-    except ImportError:
-        return None
 
 
 @pytest.fixture
@@ -491,3 +584,119 @@ def comment_repo(setup_test_models):
     from tests.core.base.test_repo.modesl_for_test import TestComment
 
     return BaseRepository(TestComment, setup_test_models)  # type: ignore
+
+
+# Фикстуры фабрик с правильной настройкой сессий
+@pytest.fixture(scope="function")
+def user_factory(async_session):
+    """Фабрика пользователей с настроенной сессией."""
+    # Настраиваем модель и сессию для фабрики
+    setup_factory_model(UserFactory, User)
+    setup_factory_session(UserFactory, async_session)
+    return UserFactory
+
+
+@pytest.fixture(scope="function")
+def user_profile_factory(async_session):
+    """Фабрика профилей пользователей с настроенной сессией."""
+    setup_factory_model(UserProfileFactory, UserProfile)
+    setup_factory_session(UserProfileFactory, async_session)
+    return UserProfileFactory
+
+
+@pytest.fixture(scope="function")
+def refresh_token_factory(async_session):
+    """Фабрика refresh токенов с настроенной сессией."""
+    setup_factory_model(RefreshTokenFactory, RefreshToken)
+    setup_factory_session(RefreshTokenFactory, async_session)
+    return RefreshTokenFactory
+
+
+@pytest.fixture(scope="function")
+def user_session_factory(async_session):
+    """Фабрика пользовательских сессий с настроенной сессией."""
+    setup_factory_model(UserSessionFactory, UserSession)
+    setup_factory_session(UserSessionFactory, async_session)
+    return UserSessionFactory
+
+
+@pytest.fixture(scope="function")
+def orbital_token_factory(async_session):
+    """Фабрика orbital токенов с настроенной сессией."""
+    setup_factory_model(OrbitalTokenFactory, OrbitalToken)
+    setup_factory_session(OrbitalTokenFactory, async_session)
+    return OrbitalTokenFactory
+
+
+# Комбинированные фикстуры для удобства
+@pytest_asyncio.fixture(scope="function")
+async def test_user(user_factory):
+    """Создает тестового пользователя для быстрого использования."""
+    return await user_factory.create(username="testuser", email="test@example.com", is_active=True, is_verified=True)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_user(user_factory):
+    """Создает админ пользователя для тестов."""
+    return await user_factory.create(
+        username="admin", email="admin@example.com", is_active=True, is_verified=True, is_superuser=True
+    )
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_user_with_profile(user_factory, user_profile_factory):
+    """Создает пользователя с профилем."""
+    user = await user_factory.create(username="userprofile", email="profile@example.com", is_active=True)
+
+    profile = await user_profile_factory.create(user=user)
+
+    # Возвращаем объект с user и profile
+    class UserWithProfile:
+        def __init__(self, user, profile):
+            self.user = user
+            self.profile = profile
+
+    return UserWithProfile(user, profile)
+
+
+# Утилиты для очистки
+@pytest.fixture(autouse=True)
+async def reset_faker():
+    """Сбрасываем уникальные значения faker между тестами."""
+    from tests.factories.base_factories import reset_factories
+
+    await reset_factories()
+
+
+# Маркеры для категоризации тестов
+def pytest_configure(config):
+    """Настройка маркеров pytest."""
+    config.addinivalue_line("markers", "unit: Unit tests")
+    config.addinivalue_line("markers", "integration: Integration tests")
+    config.addinivalue_line("markers", "api: API tests")
+    config.addinivalue_line("markers", "auth: Authentication tests")
+    config.addinivalue_line("markers", "users: Users tests")
+    config.addinivalue_line("markers", "performance: Performance tests")
+    config.addinivalue_line("markers", "slow: Slow running tests")
+
+
+# Настройки для покрытия
+def pytest_collection_modifyitems(config, items):
+    """Автоматически добавляем маркеры по именам файлов."""
+    for item in items:
+        # API тесты
+        if "api" in item.nodeid:
+            item.add_marker(pytest.mark.api)
+
+        # Auth тесты
+        if "auth" in item.nodeid:
+            item.add_marker(pytest.mark.auth)
+
+        # Users тесты
+        if "users" in item.nodeid:
+            item.add_marker(pytest.mark.users)
+
+        # Performance тесты
+        if "performance" in item.nodeid:
+            item.add_marker(pytest.mark.performance)
+            item.add_marker(pytest.mark.slow)

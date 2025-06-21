@@ -12,6 +12,7 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from core.exceptions import CoreToolsConnectionError
 from core.realtime.models import ConnectionStatus, MessageType, WSCommand, WSMessage, WSResponse
 
 logger = logging.getLogger(__name__)
@@ -172,7 +173,7 @@ class WSClient:
     async def send_message(self, content: Any, message_type: MessageType = MessageType.TEXT) -> str:
         """Отправка сообщения."""
         if not self.is_connected():
-            raise ConnectionError("WebSocket не подключен")
+            raise CoreToolsConnectionError("ws_client", "WebSocket не подключен")
 
         message = WSMessage(type=message_type, data=content)
 
@@ -181,7 +182,7 @@ class WSClient:
                 await self.websocket.send(json.dumps(message.dict()))
                 return message.id
             else:
-                raise ConnectionError("WebSocket соединение не установлено")
+                raise CoreToolsConnectionError("ws_client", "WebSocket соединение не установлено")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
             raise
@@ -189,10 +190,10 @@ class WSClient:
     async def send_command(self, action: str, data: dict[str, Any] | None = None, timeout: int = 10) -> WSResponse:
         """Отправка команды с ожиданием ответа."""
         if not self.is_connected():
-            raise ConnectionError("WebSocket не подключен")
+            raise CoreToolsConnectionError("ws_client", "WebSocket не подключен")
 
         request_id = str(uuid.uuid4())
-        command = WSCommand(action=action, data=data or {}, request_id=request_id)
+        command = WSCommand(action=action, data=data or {})
 
         # Создаем Future для ответа
         response_future: asyncio.Future[dict[str, Any]] = asyncio.Future()
@@ -203,7 +204,7 @@ class WSClient:
             if self.websocket is not None:
                 await self.websocket.send(json.dumps(command.dict()))
             else:
-                raise ConnectionError("WebSocket соединение не установлено")
+                raise CoreToolsConnectionError("ws_client", "WebSocket соединение не установлено")
 
             # Ждем ответ
             response_data = await asyncio.wait_for(response_future, timeout=timeout)
