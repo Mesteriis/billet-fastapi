@@ -1,0 +1,134 @@
+[version]
+number = "1.0.0"
+name = "Foundation"
+description = "Complete FastAPI application templates with BasicCRUD, Advanced, and Enterprise features"
+release_date = "2024-06-22"
+compatibility = ">=Python 3.11"
+
+[features]
+basic_crud = true
+advanced_search = true
+enterprise_cache = true
+enterprise_events = true
+repository_mixins = true
+dependency_injection = true
+# Full feature set in v1
+template_inheritance = true
+monitoring_integration = true
+performance_optimizations = true
+health_checks = true
+openapi_enhancements = true
+graceful_shutdown = true
+
+[templates]
+# Base templates for inheritance
+base = [
+    "_base_model.py.j2",
+    "_base_schema.py.j2", 
+    "_base_repository.py.j2",
+    "_base_service.py.j2",
+    "_base_api.py.j2"
+]
+
+basic_crud = [
+    "models.py.j2",
+    "schemas.py.j2", 
+    "repository.py.j2",
+    "service.py.j2",
+    "api.py.j2",
+    "exceptions.py.j2",
+    "depends.py.j2",
+    "__init__.py.j2",
+    "tests/test_api.py.j2",
+    "tests/factories.py.j2"
+]
+
+advanced = [
+    "models.py.j2",
+    "schemas.py.j2",
+    "repository.py.j2", 
+    "service.py.j2",
+    "api.py.j2",
+    "exceptions.py.j2",
+    "depends.py.j2",
+    "__init__.py.j2",
+    "middleware/logging_middleware.py.j2",
+    "middleware/monitoring_middleware.py.j2",
+    "health.py.j2",
+    "tests/test_api.py.j2",
+    "tests/test_monitoring.py.j2"
+]
+
+enterprise = [
+    "models.py.j2",
+    "schemas.py.j2",
+    "repository.py.j2",
+    "service.py.j2", 
+    "api.py.j2",
+    "exceptions.py.j2",
+    "depends.py.j2",
+    "__init__.py.j2",
+    "cache_service.py.j2",
+    "event_service.py.j2",
+    "monitoring_service.py.j2",
+    "health_service.py.j2",
+    "middleware/logging_middleware.py.j2",
+    "middleware/monitoring_middleware.py.j2",
+    "middleware/performance_middleware.py.j2",
+    "health.py.j2",
+    "tests/test_api.py.j2",
+    "tests/test_cache.py.j2",
+    "tests/test_events.py.j2",
+    "tests/test_monitoring.py.j2",
+    "tests/test_performance.py.j2"
+]
+
+[dependencies]
+basic = [
+    "fastapi>=0.104.0",
+    "pydantic>=2.4.0",
+    "sqlalchemy>=2.0.0"
+]
+
+advanced = [
+    "fastapi>=0.104.0",
+    "pydantic>=2.4.0", 
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
+    "prometheus-client>=0.19.0"
+]
+
+enterprise = [
+    "fastapi>=0.104.0",
+    "pydantic>=2.4.0",
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    "structlog>=23.1.0",
+    "prometheus-client>=0.19.0",
+    "opentelemetry-api>=1.21.0",
+    "opentelemetry-sdk>=1.21.0",
+    "sentry-sdk[fastapi]>=1.38.0"
+]
+
+[inheritance]
+# Template inheritance mapping for customization
+basic_crud.models = { extends = "base._base_model.py.j2", blocks = ["custom_fields", "custom_methods"] }
+basic_crud.schemas = { extends = "base._base_schema.py.j2", blocks = ["validation_rules", "custom_fields"] }
+basic_crud.repository = { extends = "base._base_repository.py.j2", blocks = ["custom_queries", "custom_methods"] }
+basic_crud.service = { extends = "base._base_service.py.j2", blocks = ["business_logic", "validation"] }
+basic_crud.api = { extends = "base._base_api.py.j2", blocks = ["custom_endpoints", "custom_dependencies"] }
+
+[architecture]
+levels = ["BasicCRUD", "Advanced", "Enterprise"]
+patterns = ["Repository", "Service", "Dependency Injection", "Event-Driven"]
+monitoring = ["Prometheus", "OpenTelemetry", "Health Checks"]
+caching = ["Redis", "TTL", "Tag-based invalidation"]
+events = ["Domain Events", "Async Handlers", "Dead Letter Queue"]
+
+[breaking_changes]
+# None in initial complete version
+
+[migration_notes]
+# Future migration instructions will be added here
+from_previous = "This is the complete initial version with all features" 

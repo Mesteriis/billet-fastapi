@@ -1,0 +1,234 @@
+"""
+TestStaticSchema monitoring middleware for Advanced level.
+
+Template Version: v1.0.0 (Complete)
+Features: Basic monitoring, Performance tracking, Request correlation
+"""
+
+import time
+import uuid
+from typing import Callable
+import logging
+
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+
+# Basic metrics (no external dependencies for Advanced level)
+try:
+    from prometheus_client import Counter, Histogram, Gauge
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logging.warning("Prometheus client not available - basic monitoring only")
+
+logger = logging.getLogger("monitoring.test_static_schemas")
+
+# Basic metrics if prometheus available
+if METRICS_AVAILABLE:
+    REQUEST_COUNT = Counter(
+        'fastapi_requests_total',
+        'Total number of requests',
+        ['app', 'method', 'endpoint', 'status_code']
+    )
+    
+    REQUEST_DURATION = Histogram(
+        'fastapi_request_duration_seconds',
+        'Request duration in seconds',
+        ['app', 'method', 'endpoint']
+    )
+    
+    ACTIVE_REQUESTS = Gauge(
+        'fastapi_active_requests',
+        'Number of active requests',
+        ['app', 'method', 'endpoint']
+    )
+
+
+class TestStaticSchemaMonitoringMiddleware(BaseHTTPMiddleware):
+    """
+    Advanced monitoring middleware for TestStaticSchema operations.
+    
+    Features:
+    - Request correlation with unique IDs
+    - Performance monitoring and timing
+    - Basic metrics collection (if prometheus available)
+    - Structured logging
+    - Slow request detection
+    
+    Example:
+        >>> from fastapi import FastAPI
+        >>> from apps.test_static_schemas.middleware.test_static_schemas_monitoring_middleware import TestStaticSchemaMonitoringMiddleware
+        >>> 
+        >>> app = FastAPI()
+        >>> app.add_middleware(TestStaticSchemaMonitoringMiddleware, app_name="test_static_schemas")
+    """
+
+    def __init__(
+        self,
+        app,
+        app_name: str = "test_static_schemas",
+        slow_request_threshold: float = 1.0,
+        enable_metrics: bool = True
+    ):
+        """
+        Initialize monitoring middleware.
+        
+        Args:
+            app: FastAPI application instance
+            app_name: Application name for logging
+            slow_request_threshold: Threshold for slow request warnings (seconds)
+            enable_metrics: Enable prometheus metrics collection
+        """
+        super().__init__(app)
+        self.app_name = app_name
+        self.slow_request_threshold = slow_request_threshold
+        self.enable_metrics = enable_metrics and METRICS_AVAILABLE
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """Process request through monitoring middleware."""
+        # Generate correlation ID
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        
+        # Extract request info
+        method = request.method
+        path = request.url.path
+        endpoint = self._normalize_endpoint(path)
+        
+        # Start timing
+        start_time = time.time()
+        
+        # Track active requests
+        if self.enable_metrics:
+            ACTIVE_REQUESTS.labels(
+                app=self.app_name,
+                method=method,
+                endpoint=endpoint
+            ).inc()
+        
+        try:
+            # Process request
+            response = await call_next(request)
+            
+            # Calculate response time
+            response_time = time.time() - start_time
+            
+            # Add headers
+            response.headers["X-Request-ID"] = request_id
+            response.headers["X-Response-Time"] = f"{response_time:.3f}s"
+            response.headers["X-App-Name"] = self.app_name
+            
+            # Record metrics
+            if self.enable_metrics:
+                self._record_metrics(method, endpoint, response.status_code, response_time)
+            
+            # Check for slow requests
+            if response_time > self.slow_request_threshold:
+                self._log_slow_request(request_id, method, endpoint, response_time)
+            
+            # Log successful request
+            self._log_request(request_id, method, endpoint, response.status_code, response_time)
+            
+            return response
+            
+        except Exception as e:
+            # Calculate error response time
+            response_time = time.time() - start_time
+            
+            # Log error
+            logger.error(
+                f"Request failed: {method} {endpoint}",
+                extra={
+                    "request_id": request_id,
+                    "method": method,
+                    "endpoint": endpoint,
+                    "error": str(e),
+                    "response_time": response_time,
+                    "app": self.app_name
+                },
+                exc_info=True
+            )
+            
+            raise
+            
+        finally:
+            # Decrease active requests counter
+            if self.enable_metrics:
+                ACTIVE_REQUESTS.labels(
+                    app=self.app_name,
+                    method=method,
+                    endpoint=endpoint
+                ).dec()
+
+    def _normalize_endpoint(self, path: str) -> str:
+        """Normalize endpoint path for metrics."""
+        import re
+        
+        # Replace common patterns with placeholders
+        endpoint = re.sub(r'/\d+', '/{id}', path)
+        endpoint = re.sub(r'/[a-f0-9-]{36}', '/{uuid}', endpoint)
+        endpoint = re.sub(r'/[a-f0-9]{8,}', '/{hash}', endpoint)
+        
+        return endpoint
+
+    def _record_metrics(self, method: str, endpoint: str, status_code: int, response_time: float):
+        """Record prometheus metrics."""
+        try:
+            REQUEST_COUNT.labels(
+                app=self.app_name,
+                method=method,
+                endpoint=endpoint,
+                status_code=status_code
+            ).inc()
+            
+            REQUEST_DURATION.labels(
+                app=self.app_name,
+                method=method,
+                endpoint=endpoint
+            ).observe(response_time)
+            
+        except Exception as e:
+            logger.warning(f"Failed to record metrics: {e}")
+
+    def _log_slow_request(self, request_id: str, method: str, endpoint: str, response_time: float):
+        """Log slow request warning."""
+        logger.warning(
+            f"Slow request detected: {method} {endpoint}",
+            extra={
+                "request_id": request_id,
+                "method": method,
+                "endpoint": endpoint,
+                "response_time": response_time,
+                "threshold": self.slow_request_threshold,
+                "app": self.app_name,
+                "alert_type": "slow_request"
+            }
+        )
+
+    def _log_request(self, request_id: str, method: str, endpoint: str, status_code: int, response_time: float):
+        """Log request completion."""
+        log_level = "info" if status_code < 400 else "warning"
+        
+        getattr(logger, log_level)(
+            f"Request completed: {method} {endpoint} - {status_code}",
+            extra={
+                "request_id": request_id,
+                "method": method,
+                "endpoint": endpoint,
+                "status_code": status_code,
+                "response_time": response_time,
+                "app": self.app_name,
+                "event_type": "request_complete"
+            }
+        )
+
+
+# Health check for monitoring
+async def get_monitoring_health() -> dict:
+    """Get monitoring system health status."""
+    return {
+        "monitoring": "healthy",
+        "metrics_available": METRICS_AVAILABLE,
+        "app": "test_static_schemas",
+        "timestamp": time.time()
+    } 

@@ -1,0 +1,251 @@
+"""
+Tests for TestModernSyntax cache service.
+
+Template Version: v1.0.0
+Level: Enterprise
+"""
+
+import pytest
+import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from datetime import datetime, timedelta
+
+from apps.test_modern_syntax.services.test_modern_syntax_cache_service import TestModernSyntaxCacheService
+from apps.test_modern_syntax.schemas.test_modern_syntax_schemas import TestModernSyntaxResponse, TestModernSyntaxCreate
+
+
+class TestCacheService:
+    """Test cases for TestModernSyntax cache service."""
+
+    @pytest.fixture
+    def cache_service(self):
+        """Create cache service instance with mocked Redis."""
+        with patch('apps.test_modern_syntax.services.test_modern_syntax_cache_service.redis') as mock_redis:
+            mock_redis.get.return_value = None
+            mock_redis.set.return_value = True
+            mock_redis.delete.return_value = 1
+            mock_redis.exists.return_value = False
+            
+            service = TestModernSyntaxCacheService()
+            service.redis = mock_redis
+            return service
+
+    @pytest.fixture
+    def sample_testmodernsyntax(self):
+        """Sample TestModernSyntax data for testing."""
+        return TestModernSyntaxResponse(
+            id=1,
+            name="Test TestModernSyntax",
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+
+    @pytest_asyncio.async_test
+    async def test_get_from_cache_hit(self, cache_service, sample_testmodernsyntax):
+        """Test successful cache hit."""
+        # Mock Redis to return cached data
+        cache_service.redis.get.return_value = json.dumps(sample_testmodernsyntax.model_dump())
+        
+        result = await cache_service.get("test_key")
+        
+        assert result is not None
+        assert result["id"] == sample_testmodernsyntax.id
+        assert result["name"] == sample_testmodernsyntax.name
+        cache_service.redis.get.assert_called_once_with("test_key")
+
+    @pytest_asyncio.async_test
+    async def test_get_from_cache_miss(self, cache_service):
+        """Test cache miss."""
+        # Mock Redis to return None (cache miss)
+        cache_service.redis.get.return_value = None
+        
+        result = await cache_service.get("test_key")
+        
+        assert result is None
+        cache_service.redis.get.assert_called_once_with("test_key")
+
+    @pytest_asyncio.async_test
+    async def test_set_in_cache(self, cache_service, sample_testmodernsyntax):
+        """Test setting data in cache."""
+        # Mock Redis set operation
+        cache_service.redis.set.return_value = True
+        
+        await cache_service.set("test_key", sample_testmodernsyntax.model_dump(), ttl=300)
+        
+        cache_service.redis.set.assert_called_once()
+        call_args = cache_service.redis.set.call_args
+        assert call_args[0][0] == "test_key"
+        assert call_args[1]["ex"] == 300
+
+    @pytest_asyncio.async_test
+    async def test_delete_from_cache(self, cache_service):
+        """Test deleting data from cache."""
+        # Mock Redis delete operation
+        cache_service.redis.delete.return_value = 1
+        
+        result = await cache_service.delete("test_key")
+        
+        assert result is True
+        cache_service.redis.delete.assert_called_once_with("test_key")
+
+    @pytest_asyncio.async_test
+    async def test_delete_from_cache_not_found(self, cache_service):
+        """Test deleting non-existent key."""
+        # Mock Redis delete operation (key not found)
+        cache_service.redis.delete.return_value = 0
+        
+        result = await cache_service.delete("test_key")
+        
+        assert result is False
+        cache_service.redis.delete.assert_called_once_with("test_key")
+
+    @pytest_asyncio.async_test
+    async def test_get_with_fallback(self, cache_service, sample_testmodernsyntax):
+        """Test get with fallback function."""
+        # Mock cache miss, then successful fallback
+        cache_service.redis.get.return_value = None
+        cache_service.redis.set.return_value = True
+        
+        async def fallback_func():
+            return sample_testmodernsyntax.model_dump()
+        
+        result = await cache_service.get_with_fallback("test_key", fallback_func, ttl=300)
+        
+        assert result is not None
+        assert result["id"] == sample_testmodernsyntax.id
+        cache_service.redis.get.assert_called_once_with("test_key")
+        cache_service.redis.set.assert_called_once()
+
+    @pytest_asyncio.async_test
+    async def test_invalidate_tags(self, cache_service):
+        """Test tag-based cache invalidation."""
+        # Mock Redis operations for tag invalidation
+        cache_service.redis.smembers.return_value = {"key1", "key2", "key3"}
+        cache_service.redis.delete.return_value = 3
+        cache_service.redis.srem.return_value = 1
+        
+        result = await cache_service.invalidate_tags(["tag1", "tag2"])
+        
+        assert result > 0
+        cache_service.redis.smembers.assert_called()
+        cache_service.redis.delete.assert_called()
+
+    @pytest_asyncio.async_test
+    async def test_get_cache_stats(self, cache_service):
+        """Test cache statistics retrieval."""
+        # Mock Redis info command
+        cache_service.redis.info.return_value = {
+            "used_memory": 1024000,
+            "used_memory_human": "1.00M",
+            "keyspace_hits": 1000,
+            "keyspace_misses": 100
+        }
+        
+        stats = await cache_service.get_cache_stats()
+        
+        assert "memory_usage" in stats
+        assert "hit_rate" in stats
+        assert "total_keys" in stats
+        cache_service.redis.info.assert_called_once()
+
+    @pytest_asyncio.async_test
+    async def test_cache_error_handling(self, cache_service):
+        """Test error handling in cache operations."""
+        # Mock Redis to raise exception
+        cache_service.redis.get.side_effect = Exception("Redis connection error")
+        
+        result = await cache_service.get("test_key")
+        
+        # Should return None on error, not raise exception
+        assert result is None
+
+    @pytest_asyncio.async_test
+    async def test_cache_compression(self, cache_service):
+        """Test data compression in cache."""
+        # Create large data that should be compressed
+        large_data = {"data": "x" * 10000, "id": 1}
+        
+        cache_service.redis.set.return_value = True
+        
+        await cache_service.set("test_key", large_data, compress=True)
+        
+        cache_service.redis.set.assert_called_once()
+        call_args = cache_service.redis.set.call_args
+        # Compressed data should be smaller than original
+        assert len(call_args[0][1]) < len(json.dumps(large_data))
+
+    @pytest_asyncio.async_test
+    async def test_cache_expiration(self, cache_service, sample_testmodernsyntax):
+        """Test cache expiration settings."""
+        cache_service.redis.set.return_value = True
+        
+        # Test with custom TTL
+        await cache_service.set("test_key", sample_testmodernsyntax.model_dump(), ttl=600)
+        
+        cache_service.redis.set.assert_called_once()
+        call_args = cache_service.redis.set.call_args
+        assert call_args[1]["ex"] == 600
+
+    @pytest_asyncio.async_test
+    async def test_bulk_operations(self, cache_service):
+        """Test bulk cache operations."""
+        # Mock Redis pipeline for bulk operations
+        mock_pipeline = MagicMock()
+        cache_service.redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = [True, True, True]
+        
+        keys_values = {
+            "key1": {"id": 1, "name": "Test 1"},
+            "key2": {"id": 2, "name": "Test 2"},
+            "key3": {"id": 3, "name": "Test 3"}
+        }
+        
+        result = await cache_service.set_bulk(keys_values, ttl=300)
+        
+        assert result is True
+        cache_service.redis.pipeline.assert_called_once()
+        mock_pipeline.execute.assert_called_once()
+
+    @pytest_asyncio.async_test
+    async def test_cache_warming(self, cache_service):
+        """Test cache warming functionality."""
+        # Mock data loader
+        async def data_loader():
+            return [
+                {"id": 1, "name": "Item 1"},
+                {"id": 2, "name": "Item 2"},
+                {"id": 3, "name": "Item 3"}
+            ]
+        
+        cache_service.redis.set.return_value = True
+        
+        result = await cache_service.warm_cache("items", data_loader, ttl=600)
+        
+        assert result is True
+        # Should call set for each item
+        assert cache_service.redis.set.call_count >= 3
+
+    @pytest_asyncio.async_test
+    async def test_cache_health_check(self, cache_service):
+        """Test cache health check."""
+        # Mock Redis ping
+        cache_service.redis.ping.return_value = True
+        
+        health = await cache_service.health_check()
+        
+        assert health["status"] == "healthy"
+        assert health["connected"] is True
+        cache_service.redis.ping.assert_called_once()
+
+    @pytest_asyncio.async_test
+    async def test_cache_health_check_failure(self, cache_service):
+        """Test cache health check failure."""
+        # Mock Redis ping failure
+        cache_service.redis.ping.side_effect = Exception("Connection failed")
+        
+        health = await cache_service.health_check()
+        
+        assert health["status"] == "unhealthy"
+        assert health["connected"] is False
+        assert "error" in health 

@@ -1,0 +1,38 @@
+[app]
+# Уровень приложения: "BasicCRUD", "Advanced", "Enterprise"
+level = "BasicCRUD"
+name = "TestStaticSchema"
+description = "TestStaticSchema application"
+
+[database]
+# Настройки таблицы
+table_name = "test_static_schemas"
+schema = "public"
+
+[features]
+# Включить/выключить функции
+enable_soft_delete = true
+enable_timestamps = true
+enable_pagination = true
+enable_caching = false  # Только для Enterprise
+enable_events = false   # Только для Enterprise
+enable_monitoring = false  # Только для Enterprise
+
+[exceptions]
+# Настройки системы исключений
+enable_rich_traceback = true  # Rich traceback для красивых ошибок
+enable_error_codes = true     # Уникальные коды ошибок
+enable_detailed_context = true  # Детальный контекст в исключениях
+log_exceptions = true         # Логирование исключений
+
+[api]
+# Настройки API
+prefix = "/test-static-schemas"
+tags = ["TestStaticSchema"]
+include_in_schema = true
+
+[testing]
+# Настройки тестирования
+generate_factories = true
+generate_fixtures = true
+test_coverage_target = 80

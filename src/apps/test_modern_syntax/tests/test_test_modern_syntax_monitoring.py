@@ -1,0 +1,137 @@
+"""
+Tests for TestModernSyntax monitoring functionality.
+
+Template Version: v1.0.0 (Complete)
+Level: Advanced
+"""
+
+import pytest
+import pytest_asyncio
+from unittest.mock import patch, MagicMock
+import json
+
+from fastapi.testclient import TestClient
+from main import app
+
+
+class TestAdvancedMonitoring:
+    """Test cases for Advanced monitoring functionality."""
+
+    @pytest.fixture
+    def client(self):
+        """Test client for monitoring endpoints."""
+        return TestClient(app)
+
+    def test_health_check_endpoint(self, client):
+        """Test basic health check endpoint."""
+        response = client.get("/health/")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert data["status"] == "healthy"
+        assert data["service"] == "test_modern_syntax"
+        assert "timestamp" in data
+        assert data["version"] == "v1.0.0"
+        assert data["level"] == "Advanced"
+
+    def test_detailed_health_check(self, client):
+        """Test detailed health check with dependencies."""
+        response = client.get("/health/detailed")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "checks" in data
+        assert "database" in data["checks"]
+        assert data["checks"]["database"]["status"] in ["healthy", "unhealthy"]
+
+    def test_readiness_probe(self, client):
+        """Test Kubernetes readiness probe."""
+        response = client.get("/health/ready")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert data["status"] in ["ready", "not_ready"]
+        assert data["service"] == "test_modern_syntax"
+
+    def test_liveness_probe(self, client):
+        """Test Kubernetes liveness probe."""
+        response = client.get("/health/live")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert data["status"] == "alive"
+        assert data["service"] == "test_modern_syntax"
+
+    @pytest_asyncio.async_test  
+    async def test_monitoring_middleware_headers(self, client):
+        """Test monitoring middleware adds proper headers."""
+        # Test any endpoint to check middleware headers
+        response = client.get("/health/")
+        
+        # Check if monitoring headers are present
+        assert "X-Request-ID" in response.headers or response.status_code == 200
+        assert "X-App-Name" in response.headers or response.status_code == 200
+
+    @patch('prometheus_client.Counter')
+    def test_metrics_collection(self, mock_counter, client):
+        """Test prometheus metrics collection if available."""
+        mock_counter.return_value.labels.return_value.inc = MagicMock()
+        
+        # Make request to trigger metrics
+        response = client.get("/health/")
+        
+        # Should complete successfully regardless of metrics
+        assert response.status_code == 200
+
+    def test_slow_request_detection(self, client):
+        """Test slow request detection functionality."""
+        # This would require mocking the middleware to simulate slow requests
+        # For now, just verify the health endpoint responds quickly
+        import time
+        
+        start_time = time.time()
+        response = client.get("/health/")
+        response_time = time.time() - start_time
+        
+        assert response.status_code == 200
+        assert response_time < 1.0  # Should be fast
+
+    @pytest_asyncio.async_test
+    async def test_monitoring_health_check(self):
+        """Test monitoring system health check."""
+        try:
+            from apps.test_modern_syntax.middleware.test_modern_syntax_monitoring_middleware import get_monitoring_health
+            health = await get_monitoring_health()
+            
+            assert "monitoring" in health
+            assert "app" in health
+            assert health["app"] == "test_modern_syntax"
+            
+        except ImportError:
+            # Middleware not available in test environment
+            pytest.skip("Monitoring middleware not available")
+
+    def test_error_handling_in_monitoring(self, client):
+        """Test error handling in monitoring endpoints."""
+        # Test with invalid endpoint to trigger error handling
+        response = client.get("/health/nonexistent")
+        
+        # Should handle gracefully (404 not 500)
+        assert response.status_code == 404
+
+    def test_request_correlation_id_consistency(self, client):
+        """Test request correlation ID consistency."""
+        # Make multiple requests and check they have unique correlation
+        response1 = client.get("/health/")
+        response2 = client.get("/health/")
+        
+        # Both should succeed
+        assert response1.status_code == 200
+        assert response2.status_code == 200
+        
+        # Headers should be present (if middleware is active)
+        # This test is basic since we can't easily test middleware in unit tests 

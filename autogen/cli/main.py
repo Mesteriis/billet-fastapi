@@ -1,100 +1,73 @@
 """
-Main CLI entry point for autogen.
+Main CLI application for Autogen.
 
-This module provides the main Typer application and command routing.
+Simplified single-version approach with v1.0.0 Complete templates.
 """
 
 import typer
-from rich.console import Console
-from rich.panel import Panel
 from typing_extensions import Annotated
 
 from .init import initapp_command
 from .interactive import interactive_command
+from .list import list_apps
+from .migrate import migrate_app
 from .start import startapp_command
+from .tests import tests
+from .validate import validate_template
 
-# Создаем основное CLI приложение
+# Create main CLI application
 app = typer.Typer(
     name="autogen",
-    help="🚀 Enterprise-grade FastAPI application generator",
+    help="🚀 FastAPI Application Generator (v1.0.0 Complete)",
+    add_completion=False,
     rich_markup_mode="rich",
-    no_args_is_help=False,
+    no_args_is_help=True,
 )
 
-console = Console()
+# Add all commands
+app.command(name="startapp", help="🆕 Create a new FastAPI application structure.")(startapp_command)
+app.command(name="initapp", help="⚡ Initialize application with templates.")(initapp_command)
+app.command(name="list", help="📋 List all applications in the project.")(list_apps)
+app.command(name="migrate", help="🔄 Migrate application to newer structure.")(migrate_app)
+app.command(name="interactive", help="🤖 Interactive application wizard.")(interactive_command)
+app.command(name="validate-template", help="✅ Validate custom template structure.")(validate_template)
+
+# Add test generation commands
+app.add_typer(tests, name="tests", help="🧪 Generate and manage test components.")
 
 
-@app.callback(invoke_without_command=True)
+@app.callback()
 def main(
-    ctx: typer.Context,
-    version: Annotated[bool, typer.Option("--version", "-v", help="Show version and exit")] = False,
-    interactive: Annotated[bool, typer.Option("--interactive", "-i", help="Run in interactive mode")] = False,
+    version: Annotated[bool, typer.Option("--version", "-v", help="Show version information")] = False,
 ):
     """
-    🚀 Enterprise-grade FastAPI application generator.
+    🚀 FastAPI Application Generator (v1.0.0 Complete)
 
     Generate production-ready FastAPI applications with:
-    - BasicCRUD: Simple CRUD with FastAPI Depends
-    - Advanced: + Search, filters, aggregations
-    - Enterprise: + Caching, events, UoW, DI container
+    - BasicCRUD: Standard CRUD operations
+    - Advanced: + Search, monitoring, health checks
+    - Enterprise: + Caching, events, performance tracking
+
+    Test Components:
+    - Generate factories and fixtures
+    - Analyze test coverage
+    - Create test templates
+
+    Examples:
+        autogen startapp myapp
+        autogen initapp myapp --level Advanced
+        autogen tests factories users
+        autogen tests coverage products
+        autogen list
     """
     if version:
-        from autogen import __version__
+        import typer
 
-        console.print(
-            Panel(
-                f"[bold blue]Autogen[/bold blue] v{__version__}\n"
-                "[dim]Enterprise-grade FastAPI application generator[/dim]",
-                title="Version",
-                border_style="blue",
-            )
-        )
+        typer.echo("Autogen CLI v1.0.0 Complete")
+        typer.echo("Single-version FastAPI application generator")
+        typer.echo("Supports: BasicCRUD, Advanced, Enterprise levels")
+        typer.echo("Features: App generation, test factories, coverage analysis")
         raise typer.Exit()
-
-    if interactive:
-        interactive_command()
-        raise typer.Exit()
-
-    # If no command provided, show help
-    if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
-        raise typer.Exit()
-
-
-# Регистрируем команды
-app.command(name="startapp", help="🏗️ Create basic app structure")(startapp_command)
-app.command(name="initapp", help="⚡ Generate full app components")(initapp_command)
-
-
-@app.command(name="list")
-def list_apps():
-    """📋 List all generated applications."""
-    console.print("[yellow]⚠️ Not implemented yet[/yellow]")
-
-
-@app.command(name="check")
-def check_app(app_name: Annotated[str, typer.Argument(help="Application name to check")]):
-    """🔍 Check app compatibility and available migrations."""
-    console.print(f"[yellow]⚠️ Check for {app_name} not implemented yet[/yellow]")
-
-
-@app.command(name="migrate")
-def migrate_app(
-    app_name: Annotated[str, typer.Argument(help="Application name to migrate")],
-    to_version: Annotated[str, typer.Option("--to", help="Target template version")] = "latest",
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be changed")] = False,
-):
-    """🔄 Migrate app to newer template version."""
-    console.print(f"[yellow]⚠️ Migration for {app_name} not implemented yet[/yellow]")
-
-
-@app.command(name="validate-template")
-def validate_template(
-    template_path: Annotated[str, typer.Argument(help="Path to custom template directory")],
-    level: Annotated[str, typer.Option("--level", help="Template level to validate against")] = "BasicCRUD",
-):
-    """✅ Validate custom template structure."""
-    console.print(f"[yellow]⚠️ Template validation not implemented yet[/yellow]")
 
 
 if __name__ == "__main__":

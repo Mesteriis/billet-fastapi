@@ -1,0 +1,104 @@
+"""
+Base model template for inheritance.
+
+Template Version: v1.0.0 (Complete)
+Extends: None (Base template)
+Blocks: custom_fields, custom_methods, custom_indexes
+"""
+
+from sqlalchemy import String{% if features.enable_soft_delete %}, Boolean{% endif %}{% if features.enable_timestamps %}, DateTime{% endif %}
+from sqlalchemy.orm import Mapped, mapped_column
+{% if features.enable_timestamps %}from sqlalchemy.sql import func{% endif %}
+
+from core.base.models import BaseModel
+
+
+class {{ model_name }}(BaseModel):
+    """
+    {{ model_name }} model for {{ app_name }} application.
+
+    Template Version: v1.0.0 (Complete)
+    Level: {{ level }}
+    Generated at: {{ timestamp }}
+    
+    This model provides:
+    - Standard CRUD operations
+    {% if features.enable_soft_delete %}- Soft delete support{% endif %}
+    {% if features.enable_timestamps %}- Automatic timestamps{% endif %}
+    {% block custom_features %}{% endblock %}
+    """
+
+    # Standard fields (present in all models)
+    name: Mapped[str] = mapped_column(
+        String(255), 
+        nullable=False, 
+        comment="{{ model_name }} name",
+        index=True
+    )
+
+    {% if features.enable_soft_delete %}
+    # Soft delete support
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Soft delete flag",
+        index=True
+    )
+    {% endif %}
+
+    {% if features.enable_timestamps %}
+    # Timestamps
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        comment="Creation timestamp",
+        index=True
+    )
+    
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="Last update timestamp",
+        index=True
+    )
+    {% endif %}
+
+    {% block custom_fields %}
+    # Custom fields go here - override in child templates
+    {% endblock %}
+
+    # Base indexes
+    __table_args__ = (
+        {% block custom_indexes %}
+        # Custom indexes go here - override in child templates
+        {% endblock %}
+    )
+
+    def __repr__(self) -> str:
+        """String representation of {{ model_name }}."""
+        return f"<{{ model_name }}(id={self.id}, name='{self.name}')>"
+
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        return self.name
+
+    {% if features.enable_soft_delete %}
+    def soft_delete(self) -> None:
+        """Mark this {{ model_name.lower() }} as deleted."""
+        self.is_deleted = True
+
+    def restore(self) -> None:
+        """Restore this {{ model_name.lower() }} from soft delete."""
+        self.is_deleted = False
+
+    @property
+    def is_active(self) -> bool:
+        """Check if {{ model_name.lower() }} is active (not deleted)."""
+        return not self.is_deleted
+    {% endif %}
+
+    {% block custom_methods %}
+    # Custom methods go here - override in child templates
+    {% endblock %} 
