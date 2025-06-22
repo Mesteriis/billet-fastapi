@@ -142,7 +142,7 @@ class TestUserServiceUnit:
     async def test_delete_user_success(self, user_service, mock_user_repo, sample_user):
         """Test deleting user successfully."""
         user_id = sample_user.id
-        mock_user_repo.get_by_id.return_value = sample_user
+        mock_user_repo.get_by.return_value = sample_user  # Исправлено: get_by вместо get_by_id
         mock_user_repo.delete.return_value = None
 
         result = await user_service.delete_user(user_id)
@@ -153,7 +153,7 @@ class TestUserServiceUnit:
     async def test_activate_user_success(self, user_service, mock_user_repo, sample_user):
         """Test activating user successfully."""
         user_id = sample_user.id
-        mock_user_repo.get_by_id.return_value = sample_user
+        mock_user_repo.get_by.return_value = sample_user  # Исправлено: get_by вместо get_by_id
         mock_user_repo.update.return_value = sample_user
 
         result = await user_service.activate_user(user_id)
@@ -164,7 +164,7 @@ class TestUserServiceUnit:
     async def test_deactivate_user_success(self, user_service, mock_user_repo, sample_user):
         """Test deactivating user successfully."""
         user_id = sample_user.id
-        mock_user_repo.get_by_id.return_value = sample_user
+        mock_user_repo.get_by.return_value = sample_user  # Исправлено: get_by вместо get_by_id
         mock_user_repo.update.return_value = sample_user
 
         result = await user_service.deactivate_user(user_id)

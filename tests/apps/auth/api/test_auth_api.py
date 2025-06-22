@@ -8,13 +8,18 @@ Auth API tests example.
 - # noqa для игнорирования линтера
 """
 
-from unittest.mock import AsyncMock
+import logging
+from unittest.mock import AsyncMock, Mock
 
 import pytest  # noqa: F401
+from fastapi import FastAPI
+from httpx import AsyncClient
 
 from tests.factories.auth_factories import RefreshTokenFactory
 from tests.factories.user_factories import UserFactory
 from tests.utils_test.api_test_client import AsyncApiTestClient
+
+logger = logging.getLogger("test_session")
 
 
 class TestAuthRegistration:
@@ -270,33 +275,45 @@ class TestAuthProtectedEndpoints:
         assert data["username"] == user.username
         assert data["email"] == user.email
 
-    async def test_logout_success(self, api_client: AsyncApiTestClient, user_factory: UserFactory, mocker):
-        """Тест выхода из системы."""
+    async def test_logout_success(self, api_client: AsyncApiTestClient, user_factory: UserFactory, app: FastAPI):
+        """Тест выхода из системы с правильной системой моков."""
         user = await user_factory.create(is_active=True)
 
         # Используем force_auth для правильной аутентификации
         await api_client.force_auth(user=user)
 
+        # Создаем AsyncMock для сервисов
         mock_jwt_service = AsyncMock()
         mock_session_service = AsyncMock()
 
+        # Настраиваем возвращаемые значения
         mock_jwt_service.revoke_refresh_token.return_value = True
+        mock_jwt_service.revoke_all_user_tokens.return_value = 3
         mock_session_service.invalidate_all_user_sessions.return_value = True
 
-        mocker.patch("apps.auth.depends.services.get_jwt_service", return_value=mock_jwt_service)
-        mocker.patch("apps.auth.depends.services.get_session_service", return_value=mock_session_service)
+        # Используем dependency_overrides для мокирования зависимостей
+        from apps.auth.depends.services import get_jwt_service, get_session_service
 
-        logout_data = {"logout_all_devices": True, "refresh_token": "some_token"}
+        app.dependency_overrides[get_jwt_service] = lambda: mock_jwt_service
+        app.dependency_overrides[get_session_service] = lambda: mock_session_service
 
-        logout_url = api_client.url_for("logout_user")
-        response = await api_client.post(logout_url, json=logout_data)
+        try:
+            logout_data = {"logout_all_devices": True, "refresh_token": "some_token"}
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "successfully" in data["message"].lower()
+            logout_url = api_client.url_for("logout_user")
+            response = await api_client.post(logout_url, json=logout_data)
 
-        # Проверяем вызовы сервисов
-        mock_jwt_service.revoke_refresh_token.assert_called_once_with("some_token")
+            assert response.status_code == 200
+            data = response.json()
+            assert "successfully" in data["message"].lower()
+
+            # Проверяем вызовы методов
+            mock_jwt_service.revoke_refresh_token.assert_called_once_with("some_token")
+            mock_jwt_service.revoke_all_user_tokens.assert_called_once_with(user.id)
+
+        finally:
+            # Очищаем overrides после теста
+            app.dependency_overrides.clear()
 
 
 class TestAuthEmailVerification:
@@ -513,47 +530,66 @@ class TestAuthPasswordResetConfirm:
 class TestAuthSessions:
     """Test session management functionality."""
 
-    async def test_get_user_sessions_success(self, api_client: AsyncApiTestClient, user_factory: UserFactory, mocker):
+    async def test_get_user_sessions_success(
+        self, api_client: AsyncApiTestClient, user_factory: UserFactory, app: FastAPI
+    ):
         """Test getting user sessions list."""
         user = await user_factory.create(is_active=True)
 
         # Используем force_auth для правильной аутентификации
         await api_client.force_auth(user=user)
 
-        # Мокаем сессии
-        mock_sessions = [
-            {
-                "session_id": "session1",
-                "user_id": user.id,
-                "ip_address": "127.0.0.1",
-                "user_agent": "Test Browser",
-                "created_at": "2024-01-01T12:00:00Z",
-                "is_active": True,
-            },
-            {
-                "session_id": "session2",
-                "user_id": user.id,
-                "ip_address": "192.168.1.1",
-                "user_agent": "Mobile App",
-                "created_at": "2024-01-02T12:00:00Z",
-                "is_active": True,
-            },
-        ]
+        # Мокаем информацию о сессиях (это словарь, а не список)
+        mock_session_info = {
+            "user_id": str(user.id),
+            "active_sessions": 2,
+            "total_sessions": 2,
+            "sessions": [
+                {
+                    "session_id": "session1",
+                    "user_id": str(user.id),
+                    "ip_address": "127.0.0.1",
+                    "user_agent": "Test Browser",
+                    "created_at": "2024-01-01T12:00:00Z",
+                    "is_active": True,
+                },
+                {
+                    "session_id": "session2",
+                    "user_id": str(user.id),
+                    "ip_address": "192.168.1.1",
+                    "user_agent": "Mobile App",
+                    "created_at": "2024-01-02T12:00:00Z",
+                    "is_active": True,
+                },
+            ],
+        }
 
         mock_session_service = AsyncMock()
-        mock_session_service.get_user_sessions.return_value = mock_sessions
+        mock_session_service.get_user_session_info.return_value = mock_session_info
 
-        mocker.patch("apps.auth.depends.services.get_session_service", return_value=mock_session_service)
+        # Используем dependency_overrides для мокирования зависимостей
+        from apps.auth.depends.services import get_session_service
 
-        sessions_url = api_client.url_for("get_user_sessions")
-        response = await api_client.get(sessions_url)
+        app.dependency_overrides[get_session_service] = lambda: mock_session_service
 
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 2
-        assert data[0]["session_id"] == "session1"
-        assert data[1]["session_id"] == "session2"
+        try:
+            sessions_url = api_client.url_for("get_user_sessions")
+            response = await api_client.get(sessions_url)
+
+            assert response.status_code == 200
+            data = response.json()
+            # Ожидаем словарь с информацией о сессиях, а не список
+            assert isinstance(data, dict)
+            assert data["user_id"] == str(user.id)
+            assert data["active_sessions"] == 2
+            assert "sessions" in data
+            assert len(data["sessions"]) == 2
+            assert data["sessions"][0]["session_id"] == "session1"
+            assert data["sessions"][1]["session_id"] == "session2"
+
+        finally:
+            # Очищаем overrides после теста
+            app.dependency_overrides.clear()
 
     async def test_get_user_sessions_unauthorized(self, api_client: AsyncApiTestClient):
         """Test getting sessions without authentication."""
@@ -569,7 +605,9 @@ class TestAuthSessions:
 
         assert "Authorization token required" in str(exc_info.value)
 
-    async def test_revoke_session_success(self, api_client: AsyncApiTestClient, user_factory: UserFactory, mocker):
+    async def test_revoke_session_success(
+        self, api_client: AsyncApiTestClient, user_factory: UserFactory, app: FastAPI
+    ):
         """Test session revocation."""
         user = await user_factory.create(is_active=True)
         session_id = "session_to_revoke"
@@ -577,18 +615,32 @@ class TestAuthSessions:
         # Используем force_auth для правильной аутентификации
         await api_client.force_auth(user=user)
 
+        # Мокаем сессию для проверки принадлежности
+        mock_session = Mock()
+        mock_session.user_id = user.id
+        mock_session.session_id = session_id
+
         mock_session_service = AsyncMock()
-        mock_session_service.revoke_session.return_value = True
+        mock_session_service.get_session.return_value = mock_session  # Добавляем мок для get_session
+        mock_session_service.invalidate_session.return_value = True
 
-        mocker.patch("apps.auth.depends.services.get_session_service", return_value=mock_session_service)
+        # Используем dependency_overrides для мокирования зависимостей
+        from apps.auth.depends.services import get_session_service
 
-        revoke_url = api_client.url_for("revoke_session", session_id=session_id)
-        response = await api_client.delete(revoke_url)
+        app.dependency_overrides[get_session_service] = lambda: mock_session_service
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "session revoked" in data["message"].lower()
-        mock_session_service.revoke_session.assert_called_once_with(session_id, user.id)
+        try:
+            revoke_url = api_client.url_for("revoke_session", session_id=session_id)
+            response = await api_client.delete(revoke_url)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "session revoked" in data["message"].lower()
+            mock_session_service.invalidate_session.assert_called_once_with(session_id)
+
+        finally:
+            # Очищаем overrides после теста
+            app.dependency_overrides.clear()
 
     async def test_revoke_session_not_found(self, api_client: AsyncApiTestClient, user_factory: UserFactory, mocker):
         """Test revoking non-existent session."""

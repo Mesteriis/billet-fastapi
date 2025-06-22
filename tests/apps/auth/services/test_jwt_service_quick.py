@@ -2,6 +2,7 @@
 Quick unit tests for JWT service to reach 70% coverage.
 """
 
+import time
 import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
@@ -86,20 +87,21 @@ class TestJWTServiceQuick:
 
     async def test_verify_access_token_valid(self, jwt_service, sample_user):
         """Test verifying valid access token - mocked version."""
-        from unittest.mock import patch
+        # Используем актуальные временные метки
+        now = int(time.time())
 
         # Мокируем jwt.decode чтобы обойти проблемы с реальным декодированием
         mock_payload = {
             "sub": str(sample_user.id),
-            "user_id": str(sample_user.id),
+            "user_id": sample_user.id,  # UUID объект вместо строки
             "username": sample_user.username,
             "email": sample_user.email,
-            "role": "user",  # Строка вместо enum для payload
+            "role": UserRole.USER,  # Правильный enum вместо строки
             "is_active": sample_user.is_active,
             "is_verified": sample_user.is_verified,
             "is_superuser": sample_user.is_superuser,
-            "iat": 1640995200,  # Фиксированное время
-            "exp": 1640998800,  # Через час
+            "iat": now,  # Актуальное время
+            "exp": now + 3600,  # Через час от текущего времени
             "jti": "test-jti",
             "token_type": "access",
             "permissions": ["read:profile", "write:profile"],
@@ -111,9 +113,10 @@ class TestJWTServiceQuick:
 
             # Проверяем что токен валидный и содержит правильные данные
             assert payload is not None, "JWT payload should not be None for valid token"
-            assert str(payload.user_id) == str(sample_user.id)
+            assert payload.user_id == sample_user.id
             assert payload.email == sample_user.email
             assert payload.username == sample_user.username
+            assert payload.role == UserRole.USER
 
     async def test_verify_access_token_invalid(self, jwt_service):
         """Test verifying invalid token."""

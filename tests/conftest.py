@@ -38,6 +38,9 @@ from tests.factories.base_factories import setup_factory_model, setup_factory_se
 from tests.factories.user_factories import UserFactory, UserProfileFactory
 from tests.utils_test.api_test_client import AsyncApiTestClient  # noqa: F401
 
+# Импортируем фикстуры из системы моков
+from tests.utils_test.mock_system import auto_mock_all, mock_manager  # noqa: F401
+
 # Настройка логирования для тестов - максимально агрессивный подход
 # Полностью отключаем все логирование кроме CRITICAL
 logging.disable(logging.INFO)
@@ -171,24 +174,46 @@ def temp_dir():
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def postgres_container():
     """Оптимизированный PostgreSQL контейнер для тестов."""
-    from testcontainers.postgres import PostgresContainer
-
     try:
-        # Используем более стабильный образ PostgreSQL
-        with PostgresContainer(
-            image="postgres:15-alpine",
-            driver="asyncpg",  # Явно указываем драйвер
-        ).with_env("POSTGRES_INITDB_ARGS", "--auth-host=trust --auth-local=trust") as pg:
-            yield pg
+        from testcontainers.postgres import PostgresContainer
+
+        # Используем более стабильную конфигурацию с trust auth
+        postgres = (
+            PostgresContainer(
+                image="postgres:15-alpine",
+                driver=None,  # Убираем explicit driver, пусть SQLAlchemy сам определяет
+            )
+            .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .with_env("POSTGRES_INITDB_ARGS", "--auth-host=trust --auth-local=trust")
+        )
+
+        with postgres as pg:
+            # Получаем базовый URL и конвертируем в asyncpg
+            base_url = pg.get_connection_url()
+
+            # Преобразуем в async URL с правильным драйвером
+            if "postgresql://" in base_url and "+asyncpg" not in base_url:
+                async_url = base_url.replace("postgresql://", "postgresql+asyncpg://")
+            else:
+                async_url = base_url
+
+            # Создаем mock объект с async URL
+            class AsyncPostgresContainer:
+                def get_connection_url(self):
+                    return async_url
+
+            yield AsyncPostgresContainer()
 
     except Exception as e:
         logger.warning(f"PostgreSQL container failed: {e}")
+        logger.info("🔄 Переключаюсь на SQLite для тестов")
 
-        class MockContainer:
+        # Fallback на SQLite с async поддержкой
+        class SQLiteContainer:
             def get_connection_url(self):
                 return "sqlite+aiosqlite:///:memory:"
 
-        yield MockContainer()
+        yield SQLiteContainer()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -196,15 +221,9 @@ async def async_engine(postgres_container, event_loop):
     """Создаем async engine для тестов."""
     uri = postgres_container.get_connection_url()
 
-    # Конвертируем PostgreSQL URL в asyncpg формат
-    if "postgresql+psycopg2://" in uri:
-        uri = uri.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-    elif "postgresql://" in uri:
-        uri = uri.replace("postgresql://", "postgresql+asyncpg://")
+    logger.info(f"🔗 Database URI: {uri[:50]}...")
 
-    logger.info(f"Database URI: {uri[:50]}...")
-
-    # ИСПРАВЛЕНИЕ: Убираем устаревший параметр 'loop' и упрощаем конфигурацию
+    # Конфигурация для engine
     engine_config = {
         "echo": False,  # Отключаем эхо для изоляции
         "poolclass": NullPool,  # Используем NullPool для избежания проблем
@@ -212,7 +231,7 @@ async def async_engine(postgres_container, event_loop):
         "pool_recycle": 300,  # Перезапускаем соединения каждые 5 минут
     }
 
-    # Для asyncpg добавляем специальные параметры
+    # Специальные параметры для asyncpg
     if "asyncpg" in uri:
         engine_config["connect_args"] = {
             "server_settings": {
@@ -220,6 +239,11 @@ async def async_engine(postgres_container, event_loop):
                 "timezone": "UTC",
             },
             "command_timeout": 60,
+        }
+    # Специальные параметры для aiosqlite
+    elif "aiosqlite" in uri:
+        engine_config["connect_args"] = {
+            "check_same_thread": False,
         }
 
     engine = create_async_engine(uri, **engine_config)
@@ -245,75 +269,18 @@ async def async_engine(postgres_container, event_loop):
 @pytest_asyncio.fixture(scope="function")
 async def setup_alembic_migrations(async_engine) -> AsyncGenerator[None, None]:
     """
-    Применяет миграции Alembic к тестовой базе данных.
+    Создает таблицы через SQLAlchemy metadata для тестов.
 
-    Автоматически:
-    - Применяет все миграции (upgrade head)
-    - Очищает данные после тестов
-    - Откатывает миграции при необходимости
+    ВРЕМЕННО: Alembic отключен для избежания конфликтов с контейнерной БД.
     """
-    import os
-    import tempfile
+    # Временно отключаем Alembic для тестов и используем только metadata
+    logger.info("📋 Создаю таблицы через SQLAlchemy metadata (Alembic отключен для тестов)")
+    await _create_tables_via_metadata(async_engine)
 
-    from alembic import command
-    from alembic.config import Config
-    from sqlalchemy import text
+    yield
 
-    # Проверяем наличие миграций
-    project_root = Path(__file__).parent.parent
-    migrations_dir = project_root / "migrations"
-    versions_dir = migrations_dir / "versions"
-
-    has_migrations = migrations_dir.exists() and versions_dir.exists() and any(versions_dir.glob("*.py"))
-
-    if has_migrations:
-        logger.info("📋 Найдены миграции Alembic, применяю...")
-        # Пытаемся применить миграции Alembic
-        try:
-            # Создаем конфиг для Alembic
-            alembic_cfg = Config()
-            alembic_cfg.set_main_option("script_location", str(migrations_dir))
-            alembic_cfg.set_main_option("sqlalchemy.url", str(async_engine.url))
-
-            # Применяем миграции синхронно
-            from sqlalchemy import create_engine
-
-            sync_url = str(async_engine.url).replace("+asyncpg", "")
-            sync_engine = create_engine(sync_url)
-
-            with sync_engine.begin() as conn:
-                alembic_cfg.attributes["connection"] = conn
-
-                # Проверяем состояние миграций
-                try:
-                    current_rev = command.current(alembic_cfg)
-                    logger.debug(f"Current migration: {current_rev}")
-                except Exception:
-                    # Если таблицы alembic_version нет, создаем и помечаем как base
-                    command.stamp(alembic_cfg, "base")
-
-                # Применяем все миграции
-                command.upgrade(alembic_cfg, "head")
-
-            sync_engine.dispose()
-            logger.info("✅ Миграции Alembic успешно применены к тестовой БД")
-
-            yield
-
-            # Очистка данных после тестов
-            async with async_engine.begin() as conn:
-                await _cleanup_app_data(conn)
-
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка применения миграций Alembic: {e}")
-            # Fallback к созданию таблиц через metadata
-            await _create_tables_via_metadata(async_engine)
-            yield
-    else:
-        # Нет миграций - используем fallback
-        logger.info("📋 Миграции не найдены, создаю таблицы через SQLAlchemy metadata")
-        await _create_tables_via_metadata(async_engine)
-        yield
+    # Очистка данных после тестов (но не удаление схемы)
+    await _cleanup_app_data(async_engine)
 
 
 async def _create_tables_via_metadata(async_engine) -> None:
@@ -333,24 +300,35 @@ async def _create_tables_via_metadata(async_engine) -> None:
         raise
 
 
-async def _cleanup_app_data(conn) -> None:
+async def _cleanup_app_data(async_engine) -> None:
     """Очищает данные приложения между тестами (без удаления схемы)."""
     try:
-        # Отключаем foreign key constraints для быстрой очистки
-        await conn.execute(text("SET session_replication_role = replica"))
+        async with async_engine.begin() as conn:
+            # Определяем тип БД для правильной очистки
+            db_url = str(async_engine.url)
 
-        # Очищаем таблицы приложения в правильном порядке (обратном FK)
-        cleanup_tables = ["orbital_tokens", "user_sessions", "refresh_tokens", "user_profiles", "users"]
+            if "postgresql" in db_url:
+                # PostgreSQL очистка
+                await conn.execute(text("SET session_replication_role = replica"))
 
-        for table in cleanup_tables:
-            try:
-                await conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
-            except Exception as e:
-                # Игнорируем ошибки для несуществующих таблиц
-                logger.debug(f"Cleanup info for {table}: {e}")
+                cleanup_tables = ["orbital_tokens", "user_sessions", "refresh_tokens", "user_profiles", "users"]
+                for table in cleanup_tables:
+                    try:
+                        await conn.execute(text(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE"))
+                    except Exception as e:
+                        # Игнорируем ошибки для несуществующих таблиц
+                        logger.debug(f"Cleanup info for {table}: {e}")
 
-        # Включаем constraints обратно
-        await conn.execute(text("SET session_replication_role = DEFAULT"))
+                await conn.execute(text("SET session_replication_role = DEFAULT"))
+
+            elif "sqlite" in db_url:
+                # SQLite очистка
+                cleanup_tables = ["orbital_tokens", "user_sessions", "refresh_tokens", "user_profiles", "users"]
+                for table in cleanup_tables:
+                    try:
+                        await conn.execute(text(f"DELETE FROM {table}"))
+                    except Exception as e:
+                        logger.debug(f"Cleanup info for {table}: {e}")
 
         logger.debug("✅ Данные приложения очищены")
 

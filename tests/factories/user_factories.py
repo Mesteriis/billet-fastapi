@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import bcrypt
 import faker
 from async_factory_boy.factory.sqlalchemy import AsyncSQLAlchemyFactory
 from factory.declarations import LazyAttribute, LazyFunction, SubFactory
@@ -36,7 +37,11 @@ class UserFactory(AsyncSQLAlchemyFactory):
     email = LazyFunction(lambda: fake.unique.email())
     first_name = Faker("first_name")
     last_name = Faker("last_name")
-    password_hash = LazyFunction(lambda: f"hashed_{fake.password()}")
+
+    # ИСПРАВЛЕНО: Используем настоящий bcrypt хеш вместо фейкового
+    password_hash = LazyFunction(
+        lambda: bcrypt.hashpw("test_password".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    )
 
     # Статусные поля
     is_active = True

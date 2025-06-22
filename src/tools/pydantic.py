@@ -22,7 +22,7 @@ Example:
 
         class UserModel(SafeModel):
             username: str = Field(min_length=3, max_length=50)
-            email: str = Field(regex=r'^[^@]+@[^@]+\.[^@]+$')
+            email: str = Field(description="User email address")
             age: int = Field(ge=0, le=120)
 
         # Will show rich error formatting in DEBUG mode
@@ -146,7 +146,7 @@ class SafeModel(PydanticBaseModel):
             class ProductModel(SafeModel):
                 name: str = Field(min_length=1, max_length=100)
                 price: float = Field(gt=0)
-                category: str = Field(regex=r'^[a-zA-Z_]+$')
+                category: str = Field(description="Product category")
 
         Handling validation errors::
 
