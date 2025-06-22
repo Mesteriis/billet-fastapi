@@ -63,6 +63,9 @@ help: ## 📋 Показать справку по всем командам
 	@echo "$(CYAN)🧹 УТИЛИТЫ:$(NC)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## 🧹/ {printf "  $(GREEN)%-18s$(NC) %s\n", $$1, substr($$2, 3)}' $(MAKEFILE_LIST)
 	@echo ""
+	@echo "$(CYAN)🚀 AUTOGEN CLI:$(NC)"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## 🚀/ {printf "  $(GREEN)%-18s$(NC) %s\n", $$1, substr($$2, 3)}' $(MAKEFILE_LIST)
+	@echo ""
 	@echo "$(YELLOW)💡 Примеры использования:$(NC)"
 	@echo "  $(GREEN)make test$(NC)                    - Запустить все тесты (с очисткой)"
 	@echo "  $(GREEN)make test-no-cleanup$(NC)         - Тесты без очистки проекта"
@@ -77,6 +80,8 @@ help: ## 📋 Показать справку по всем командам
 	@echo "  $(GREEN)make pre-commit-cleanup-full$(NC) - Полная очистка через pre-commit"
 	@echo "  $(GREEN)make run HOST=127.0.0.1$(NC)     - API на localhost"
 	@echo "  $(GREEN)make worker WORKERS=8$(NC)       - 8 воркеров TaskIQ"
+	@echo "  $(GREEN)make autogen-interactive$(NC)    - Интерактивное создание приложения"
+	@echo "  $(GREEN)make autogen-startapp APP=products$(NC) - Создать структуру products"
 
 # ============================================================================
 # УСТАНОВКА И НАСТРОЙКА
@@ -472,3 +477,45 @@ migration-summary:
 	@echo "🎉 СИСТЕМА ГОТОВА К ПРОДАКШЕНУ!"
 	@echo "✅ Все команды: make check-exceptions, make check-warnings"
 	@echo "📖 Документация: README_EXCEPTIONS_SYSTEM.md"
+
+# ============================================================================
+# 🚀 AUTOGEN CLI
+# ============================================================================
+
+.PHONY: autogen-help autogen-interactive autogen-startapp autogen-initapp autogen-initapp-dry
+
+autogen-help: ## 🚀 Показать справку Autogen CLI
+	@echo "$(GREEN)🚀 Справка Autogen CLI...$(NC)"
+	@python -m autogen --help
+
+autogen-interactive: ## 🚀 Интерактивный режим создания приложений
+	@echo "$(CYAN)🎯 Интерактивный режим Autogen...$(NC)"
+	@python -m autogen --interactive
+
+autogen-startapp: ## 🚀 Создать структуру приложения (APP=products)
+	@echo "$(BLUE)🏗️  Создание структуры приложения...$(NC)"
+	@if [ -z "$(APP)" ]; then \
+		echo "$(RED)❌ Укажите имя приложения: make autogen-startapp APP=products$(NC)"; \
+		exit 1; \
+	fi
+	@python -m autogen startapp $(APP)
+
+autogen-initapp: ## 🚀 Сгенерировать компоненты приложения (APP=products)
+	@echo "$(GREEN)⚡ Генерация компонентов приложения...$(NC)"
+	@if [ -z "$(APP)" ]; then \
+		echo "$(RED)❌ Укажите имя приложения: make autogen-initapp APP=products$(NC)"; \
+		exit 1; \
+	fi
+	@python -m autogen initapp $(APP)
+
+autogen-initapp-dry: ## 🚀 Предварительный просмотр генерации (APP=products)
+	@echo "$(YELLOW)🔍 Предварительный просмотр генерации...$(NC)"
+	@if [ -z "$(APP)" ]; then \
+		echo "$(RED)❌ Укажите имя приложения: make autogen-initapp-dry APP=products$(NC)"; \
+		exit 1; \
+	fi
+	@python -m autogen initapp $(APP) --dry-run
+
+autogen-version: ## 🚀 Показать версию Autogen
+	@echo "$(CYAN)📋 Версия Autogen CLI...$(NC)"
+	@python -m autogen --version

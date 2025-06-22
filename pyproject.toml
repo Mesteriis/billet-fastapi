@@ -6,6 +6,9 @@ requires-python = ">=3.11"
 authors = ["Alexander Mescheryakov <avm@sh-inc.ru>"]
 readme = "README.md"
 license = { text = "CC BY-NC-ND 4.0" }
+
+[project.scripts]
+autogen = "autogen.cli.main:app"
 dependencies = [
     "alembic>=1.13.0",
     "asyncpg>=0.30.0",
@@ -83,6 +86,10 @@ dev = [
     "testcontainers>=4.10.0",
     "pytest-rich>=0.2.0",
     "psycopg2-binary>=2.9.10",
+    # Autogen CLI dependencies
+    "typer[all]>=0.12.0",
+    "jinja2>=3.1.4",
+    "tomli-w>=1.0.0",
 ]
 
 [tool.ruff]
@@ -498,6 +505,12 @@ warn-unannotated-fields = false
 
 # Конфигурация линтера импортов между приложениями
 [tool.inter_app_imports_linter]
+
+# Метаданные autogen приложений (заполняется автоматически)
+[autogen]
+# Пример:
+# products = { level = "BasicCRUD", template_version = "1.0", autogen_version = "0.1.0", api_prefix = "/products" }
+# articles = { level = "Advanced", template_version = "1.0", autogen_version = "0.1.0", api_prefix = "/articles" }
 # Пути для проверки
 paths = ["src/apps"]
 # Паттерны исключений

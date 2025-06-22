@@ -1,5 +1,5 @@
 """
-Repository classes using mixins for modular functionality.
+QueryBuilder for building SQLAlchemy queries with advanced filtering support.
 """
 
 from __future__ import annotations
@@ -8,29 +8,15 @@ import logging
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Any, Generic, Literal, TypeVar
-
-logger = logging.getLogger(__name__)
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Date, DateTime, Select, and_, asc, cast, desc, func, not_, or_, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import InstrumentedAttribute, aliased, joinedload
 
-from core.base.models import BaseModel as SQLAlchemyBaseModel
-from core.exceptions import CoreRepositoryValueError
-from tools.pydantic import BaseModel as PydanticBaseModel
+if TYPE_CHECKING:
+    from core.base.models import BaseModel as SQLAlchemyBaseModel
 
-from .cache import CacheManager, get_default_cache_manager
-from .events import CreateEvent, DeleteEvent, UpdateEvent
-from .mixins import AdvancedMixin, BaseCrudMixin, EnterpriseMixin, EventMixin
-from .types import AggregationResult, CursorPaginationResult
-
-# Cache management is now handled by cache.py module
-
-ModelType = TypeVar("ModelType", bound=SQLAlchemyBaseModel)
-CreateSchemaType = TypeVar("CreateSchemaType", bound=PydanticBaseModel)
-UpdateSchemaType = TypeVar("UpdateSchemaType", bound=PydanticBaseModel)
+logger = logging.getLogger(__name__)
 
 # Базовые операторы сравнения
 BASIC_OPERATORS = {
@@ -40,6 +26,12 @@ BASIC_OPERATORS = {
     "lte": lambda f, v: f <= v,
     "gt": lambda f, v: f > v,
     "gte": lambda f, v: f >= v,
+}
+
+# Операторы для работы с NULL значениями
+NULL_OPERATORS = {
+    "isnull": lambda f, v: f.is_(None) if v else f.is_not(None),
+    "isnotnull": lambda f, v: f.is_not(None) if v else f.is_(None),
 }
 
 # Операторы для строк
@@ -66,12 +58,6 @@ COLLECTION_OPERATORS = {
     "not_between": lambda f, v: ~f.between(v[0], v[1]) if isinstance(v, (list, tuple)) and len(v) == 2 else f != v,
 }
 
-# Операторы для работы с NULL значениями
-NULL_OPERATORS = {
-    "isnull": lambda f, v: f.is_(None) if v else f.is_not(None),
-    "isnotnull": lambda f, v: f.is_not(None) if v else f.is_(None),
-}
-
 # Операторы для дат и времени
 DATE_OPERATORS = {
     "date": lambda f, v: cast(f, Date) == v if isinstance(v, (date, datetime)) else f == v,
@@ -91,7 +77,7 @@ DATE_OPERATORS = {
     "second": lambda f, v: func.extract("second", f) == v if isinstance(v, int) else f == v,
 }
 
-# Операторы для JSON полей (если используются)
+# Операторы для JSON полей
 JSON_OPERATORS = {
     "json_contains": lambda f, v: f.contains(v),
     "json_has_key": lambda f, v: f.has_key(v) if isinstance(v, str) else f == v,
@@ -123,7 +109,6 @@ FULLTEXT_OPERATORS = {
     "search_rank_cd": lambda f, v: func.ts_rank_cd(
         func.to_tsvector("russian", f), func.plainto_tsquery("russian", str(v))
     ),
-    # Многоязычный поиск
     "search_en": lambda f, v: func.to_tsvector("english", f).op("@@")(func.plainto_tsquery("english", str(v)))
     if v is not None
     else f.is_(None),
@@ -143,13 +128,11 @@ OPERATORS = {
     **FULLTEXT_OPERATORS,
 }
 
-
-def model_to_dict(obj: Any) -> dict[str, Any]:
-    """
-    Convert SQLAlchemy model instance into a dictionary.
-    Only includes direct column attributes.
-    """
-    return {c.key: getattr(obj, c.key) for c in inspect(obj).mapper.column_attrs}
+# Базовые операторы для BaseCrudMixin
+BASIC_FILTER_OPERATORS = {
+    **BASIC_OPERATORS,
+    **NULL_OPERATORS,
+}
 
 
 class QueryBuilder:
@@ -166,11 +149,18 @@ class QueryBuilder:
         self._model = model
         self._joins: dict[str, Any] = {}
 
-    def apply_filters(self, query: Select[Any], filters: dict[str, Any]) -> Select[Any]:
+    def apply_filters(
+        self, query: Select[Any], filters: dict[str, Any], *, use_advanced_operators: bool = True
+    ) -> Select[Any]:
         """
         Применяет фильтры к SQLAlchemy запросу с поддержкой расширенных операторов.
 
-        Поддерживаемые операторы:
+        :param query: SQLAlchemy Select объект запроса
+        :param filters: Словарь фильтров, где ключи - имена полей с операторами
+        :param use_advanced_operators: Использовать расширенные операторы (для AdvancedMixin)
+        :return: SQLAlchemy Select запрос с примененными фильтрами
+
+        **Поддерживаемые операторы:**
 
         **Базовые операторы сравнения:**
         - eq: равно (по умолчанию)
@@ -179,50 +169,22 @@ class QueryBuilder:
         - lte: меньше или равно
         - gt: больше
         - gte: больше или равно
-
-        **Операторы для строк:**
-        - like: LIKE с подстановочными знаками (регистрозависимый)
-        - ilike: ILIKE с подстановочными знаками (регистронезависимый)
-        - startswith: начинается с (регистрозависимо)
-        - istartswith: начинается с (регистронезависимо)
-        - endswith: заканчивается на (регистрозависимо)
-        - iendswith: заканчивается на (регистронезависимо)
-        - exact: точное совпадение
-        - iexact: точное совпадение (регистронезависимо)
-        - contains: содержит подстроку (регистрозависимо)
-        - icontains: содержит подстроку (регистронезависимо)
-        - regex: регулярное выражение
-        - iregex: регулярное выражение (регистронезависимо)
-
-        **Операторы для коллекций:**
-        - in: значение в списке
-        - not_in: значение не в списке
-        - between: значение между двумя границами
-        - not_between: значение не между двумя границами
-
-        **Операторы для NULL:**
         - isnull: является NULL (True) или не NULL (False)
         - isnotnull: не является NULL (True) или является NULL (False)
 
-        **Операторы для дат:**
-        - date: сравнение по дате (без времени)
+        **Расширенные операторы (только если use_advanced_operators=True):**
+        - like, ilike: LIKE с подстановочными знаками
+        - startswith, istartswith: начинается с
+        - endswith, iendswith: заканчивается на
+        - exact, iexact: точное совпадение
+        - contains, icontains: содержит подстроку
+        - regex, iregex: регулярное выражение
+        - in, not_in: значение в/не в списке
+        - between, not_between: значение между границами
         - date_gt/date_gte/date_lt/date_lte: сравнение дат
         - year/month/day/week/quarter: извлечение части даты
-        - week_day: день недели (0=воскресенье, 6=суббота)
-        - hour/minute/second: извлечение времени
-        - time: сравнение времени
-
-        **Операторы для JSON:**
-        - json_contains: JSON содержит значение
-        - json_has_key: JSON имеет ключ
-        - json_has_keys: JSON имеет все ключи
-        - json_has_any_keys: JSON имеет любой из ключей
-        - json_path: JSON path выражение
-        - json_extract: извлечение значения по пути
-
-        :param query: SQLAlchemy Select объект запроса
-        :param filters: Словарь фильтров, где ключи - имена полей с операторами
-        :return: SQLAlchemy Select запрос с примененными фильтрами
+        - json_*: операторы для JSON полей
+        - search_*: полнотекстовый поиск PostgreSQL
 
         **Примеры использования:**
 
@@ -231,30 +193,21 @@ class QueryBuilder:
         filters = {
             "name": "John",  # name = 'John'
             "age__gt": 18,   # age > 18
+            "deleted_at__isnull": True,  # deleted_at IS NULL
+        }
+
+        # Расширенные фильтры (только с use_advanced_operators=True)
+        filters = {
             "email__icontains": "example.com",  # email ILIKE '%example.com%'
-        }
-
-        # Фильтры по датам
-        filters = {
             "created_at__date": date(2023, 1, 1),  # DATE(created_at) = '2023-01-01'
-            "created_at__year": 2023,              # EXTRACT(year FROM created_at) = 2023
-            "updated_at__between": [start_date, end_date],  # updated_at BETWEEN start_date AND end_date
-        }
-
-        # Фильтры по связанным объектам
-        filters = {
-            "user__email__endswith": "@company.com",  # JOIN users, users.email LIKE '%@company.com'
-            "category__name__in": ["news", "blog"],   # JOIN categories, categories.name IN ('news', 'blog')
-        }
-
-        # NULL фильтры
-        filters = {
-            "deleted_at__isnull": True,   # deleted_at IS NULL
-            "avatar__isnotnull": True,    # avatar IS NOT NULL
+            "status__in": ["active", "pending"],   # status IN ('active', 'pending')
         }
         ```
         """
         try:
+            # Выбираем набор операторов в зависимости от режима
+            available_operators = OPERATORS if use_advanced_operators else BASIC_FILTER_OPERATORS
+
             # Исключаем специальные параметры которые не являются полями модели
             special_params = ["include_deleted"]
             filters = {k: v for k, v in filters.items() if k not in special_params}
@@ -269,7 +222,7 @@ class QueryBuilder:
                 op = "eq"  # оператор по умолчанию
 
                 # Проверяем, является ли последняя часть оператором
-                if field_or_op in OPERATORS:
+                if field_or_op in available_operators:
                     op = field_or_op
                     if not path:
                         logger.warning(f"Фильтр '{raw_key}' не содержит имя поля")
@@ -277,6 +230,11 @@ class QueryBuilder:
                     field = path.pop()
                 else:
                     field = field_or_op
+
+                # Для базовых фильтров проверяем доступность оператора
+                if not use_advanced_operators and op not in BASIC_FILTER_OPERATORS:
+                    logger.warning(f"Оператор '{op}' недоступен в базовом режиме фильтрации")
+                    continue
 
                 # Валидация значения для операторов
                 if not self._validate_filter_value(op, value):
@@ -289,19 +247,22 @@ class QueryBuilder:
                         # Прямое поле модели
                         attr = getattr(self._model, field, None)
                         if isinstance(attr, InstrumentedAttribute):
-                            condition = OPERATORS[op](attr, value)
+                            condition = available_operators[op](attr, value)
                             query = query.where(condition)
                         else:
                             logger.warning(f"Поле '{field}' не найдено в модели {self._model.__name__}")
                     else:
-                        # Поле связанной модели через JOIN
-                        query, related = self.get_or_create_join(query, self._model, path)
-                        attr = getattr(related, field, None)
-                        if isinstance(attr, InstrumentedAttribute):
-                            condition = OPERATORS[op](attr, value)
-                            query = query.where(condition)
+                        # Поле связанной модели через JOIN (только для расширенных фильтров)
+                        if use_advanced_operators:
+                            query, related = self.get_or_create_join(query, self._model, path)
+                            attr = getattr(related, field, None)
+                            if isinstance(attr, InstrumentedAttribute):
+                                condition = available_operators[op](attr, value)
+                                query = query.where(condition)
+                            else:
+                                logger.warning(f"Поле '{field}' не найдено в связанной модели")
                         else:
-                            logger.warning(f"Поле '{field}' не найдено в связанной модели")
+                            logger.warning(f"JOIN фильтры недоступны в базовом режиме: '{raw_key}'")
 
                 except Exception as e:
                     # Определяем ожидаемые ошибки тестов (edge cases)
@@ -329,52 +290,6 @@ class QueryBuilder:
             logger.error(f"Ошибка применения фильтров: {e}")
             return query
 
-    def _validate_filter_value(self, operator: str, value: Any) -> bool:
-        """
-        Валидирует значение для конкретного оператора фильтрации.
-
-        :param operator: Оператор фильтрации
-        :param value: Значение для валидации
-        :return: True если значение корректно, False иначе
-        """
-        if value is None and operator not in ["isnull", "isnotnull"]:
-            return False
-
-        validation_rules = {
-            # Операторы коллекций - ИСПРАВЛЕНИЕ: разрешаем пустые списки для in и not_in
-            "in": lambda v: isinstance(v, (list, tuple, set)),  # Убрали проверку len(v) > 0
-            "not_in": lambda v: isinstance(v, (list, tuple, set)),  # Убрали проверку len(v) > 0
-            "between": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
-            "not_between": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
-            # Операторы дат
-            "date": lambda v: isinstance(v, (date, datetime)),
-            "date_gt": lambda v: isinstance(v, (date, datetime)),
-            "date_gte": lambda v: isinstance(v, (date, datetime)),
-            "date_lt": lambda v: isinstance(v, (date, datetime)),
-            "date_lte": lambda v: isinstance(v, (date, datetime)),
-            "year": lambda v: isinstance(v, int) and 1900 <= v <= 3000,
-            "month": lambda v: isinstance(v, int) and 1 <= v <= 12,
-            "day": lambda v: isinstance(v, int) and 1 <= v <= 31,
-            "week": lambda v: isinstance(v, int) and 1 <= v <= 53,
-            "week_day": lambda v: isinstance(v, int) and 0 <= v <= 6,
-            "quarter": lambda v: isinstance(v, int) and 1 <= v <= 4,
-            "hour": lambda v: isinstance(v, int) and 0 <= v <= 23,
-            "minute": lambda v: isinstance(v, int) and 0 <= v <= 59,
-            "second": lambda v: isinstance(v, int) and 0 <= v <= 59,
-            # JSON операторы
-            "json_has_keys": lambda v: isinstance(v, list),
-            "json_has_any_keys": lambda v: isinstance(v, list),
-            "json_extract": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
-            # Строковые операторы
-            "regex": lambda v: isinstance(v, str),
-            "iregex": lambda v: isinstance(v, str),
-        }
-
-        if operator in validation_rules:
-            return validation_rules[operator](value)
-
-        return True  # Для остальных операторов валидация пройдена
-
     def apply_complex_filters(
         self,
         query: Select[Any],
@@ -384,6 +299,7 @@ class QueryBuilder:
     ) -> Select[Any]:
         """
         Применяет сложные фильтры с логическими операторами AND, OR, NOT.
+        Доступно только в AdvancedMixin.
 
         :param query: SQLAlchemy Select объект запроса
         :param and_filters: Фильтры, объединенные через AND (все должны выполняться)
@@ -413,7 +329,7 @@ class QueryBuilder:
             and_conditions = []
             for key, value in and_filters.items():
                 temp_query = select(self._model)
-                filtered_query = self.apply_filters(temp_query, {key: value})
+                filtered_query = self.apply_filters(temp_query, {key: value}, use_advanced_operators=True)
                 # Извлекаем WHERE условие из временного запроса
                 if filtered_query.whereclause is not None:
                     and_conditions.append(filtered_query.whereclause)
@@ -428,7 +344,7 @@ class QueryBuilder:
                 filter_conditions = []
                 for key, value in filter_dict.items():
                     temp_query = select(self._model)
-                    filtered_query = self.apply_filters(temp_query, {key: value})
+                    filtered_query = self.apply_filters(temp_query, {key: value}, use_advanced_operators=True)
                     if filtered_query.whereclause is not None:
                         filter_conditions.append(filtered_query.whereclause)
 
@@ -446,7 +362,7 @@ class QueryBuilder:
             not_conditions = []
             for key, value in not_filters.items():
                 temp_query = select(self._model)
-                filtered_query = self.apply_filters(temp_query, {key: value})
+                filtered_query = self.apply_filters(temp_query, {key: value}, use_advanced_operators=True)
                 if filtered_query.whereclause is not None:
                     not_conditions.append(filtered_query.whereclause)
 
@@ -505,220 +421,64 @@ class QueryBuilder:
         :return: SQLAlchemy Select query for listing objects
         """
         query = select(self._model)
-        if not include_deleted:
+        if not include_deleted and hasattr(self._model, "deleted_at"):
             query = query.where(self._model.deleted_at.is_(None))
         return query
 
     def get_object_query(self, id: uuid.UUID, include_deleted: bool = False) -> Select[Any]:
         """
-        Get a query for retrieving a single object by its ID.
+        Get a query for retrieving a specific object by ID.
         :param id: UUID of the object to retrieve
         :param include_deleted: Whether to include soft-deleted objects in the query
-        :return: SQLAlchemy Select query for the object
+        :return: SQLAlchemy Select query for retrieving an object by ID
         """
-        return self.get_list_query(include_deleted).where(self._model.id == id)
+        query = select(self._model).where(self._model.id == id)
+        if not include_deleted and hasattr(self._model, "deleted_at"):
+            query = query.where(self._model.deleted_at.is_(None))
+        return query
 
-
-class SimpleRepository(BaseCrudMixin[ModelType, CreateSchemaType, UpdateSchemaType]):
-    """
-    Простой репозиторий только с базовыми CRUD операциями.
-
-    Подходит для простых проектов, где не нужны продвинутые функции.
-    Поддерживает только базовые операторы фильтрации.
-
-    Example:
-        ```python
-        class UserRepository(SimpleRepository[User, CreateUserSchema, UpdateUserSchema]):
-            pass
-
-        user_repo = UserRepository(User, db_session)
-        user = await user_repo.create({"name": "John", "email": "john@example.com"})
-        users = await user_repo.list(status="active", limit=10)
-        ```
-    """
-
-    pass
-
-
-class AdvancedRepository(
-    BaseCrudMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    AdvancedMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-):
-    """
-    Продвинутый репозиторий с расширенными возможностями.
-
-    Включает все базовые CRUD операции плюс:
-    - Расширенная фильтрация (40+ операторов)
-    - Полнотекстовый поиск PostgreSQL
-    - Курсорная пагинация
-    - Сложные фильтры (AND/OR/NOT)
-    - Агрегации (SUM, AVG, MAX, MIN, COUNT)
-
-    Example:
-        ```python
-        class UserRepository(AdvancedRepository[User, CreateUserSchema, UpdateUserSchema]):
-            pass
-
-        user_repo = UserRepository(User, db_session)
-
-        # Расширенная фильтрация
-        users = await user_repo.list(email__icontains="@company.com", age__gt=18)
-
-        # Полнотекстовый поиск
-        results = await user_repo.fulltext_search(
-            search_fields=["name", "bio"],
-            query_text="python developer"
-        )
-
-        # Агрегации
-        stats = await user_repo.aggregate("age", operations=["count", "avg"])
-        ```
-    """
-
-    pass
-
-
-class EventDrivenRepository(
-    BaseCrudMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    EventMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-):
-    """
-    Репозиторий с поддержкой событий.
-
-    Включает базовые CRUD операции плюс:
-    - Автоматические события для всех операций
-    - Настраиваемые хуки событий
-    - Интеграция с системой трейсинга
-
-    Example:
-        ```python
-        class UserRepository(EventDrivenRepository[User, CreateUserSchema, UpdateUserSchema]):
-            pass
-
-        user_repo = UserRepository(User, db_session)
-
-        # Создание с событием
-        user = await user_repo.create_with_event(user_data)
-
-        # Обновление с событием
-        updated_user = await user_repo.update_with_event(user, {"status": "active"})
-        ```
-    """
-
-    pass
-
-
-class EnterpriseRepository(
-    BaseCrudMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    AdvancedMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    EnterpriseMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-):
-    """
-    Корпоративный репозиторий для масштабируемых приложений.
-
-    Включает все функции AdvancedRepository плюс:
-    - Кэширование с Redis/Memory
-    - Bulk операции с батчингом
-    - Статистика производительности
-    - Мониторинг и метрики
-
-    Example:
-        ```python
-        # С кэшированием
-        cache_manager = CacheManager(redis_client=redis_client)
-
-        class UserRepository(EnterpriseRepository[User, CreateUserSchema, UpdateUserSchema]):
-            pass
-
-        user_repo = UserRepository(User, db_session, cache_manager)
-
-        # Bulk операции
-        created_users = await user_repo.bulk_create(users_data, batch_size=500)
-
-        # Статистика кэша
-        stats = await user_repo.get_cache_stats()
-        ```
-    """
-
-    def __init__(self, model: type[ModelType], db: AsyncSession, cache_manager: CacheManager | None = None):
+    def _validate_filter_value(self, operator: str, value: Any) -> bool:
         """
-        Initialize EnterpriseRepository.
+        Валидирует значение для конкретного оператора фильтрации.
 
-        :param model: SQLAlchemy model class
-        :param db: async SQLAlchemy session
-        :param cache_manager: Cache manager for caching functionality
+        :param operator: Оператор фильтрации
+        :param value: Значение для валидации
+        :return: True если значение корректно, False иначе
         """
-        BaseCrudMixin.__init__(self, model, db)
-        EnterpriseMixin.__init__(self, model, db, cache_manager)
+        if value is None and operator not in ["isnull", "isnotnull"]:
+            return False
 
+        validation_rules = {
+            # Операторы коллекций - разрешаем пустые списки для in и not_in
+            "in": lambda v: isinstance(v, (list, tuple, set)),
+            "not_in": lambda v: isinstance(v, (list, tuple, set)),
+            "between": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
+            "not_between": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
+            # Операторы дат
+            "date": lambda v: isinstance(v, (date, datetime)),
+            "date_gt": lambda v: isinstance(v, (date, datetime)),
+            "date_gte": lambda v: isinstance(v, (date, datetime)),
+            "date_lt": lambda v: isinstance(v, (date, datetime)),
+            "date_lte": lambda v: isinstance(v, (date, datetime)),
+            "year": lambda v: isinstance(v, int) and 1900 <= v <= 3000,
+            "month": lambda v: isinstance(v, int) and 1 <= v <= 12,
+            "day": lambda v: isinstance(v, int) and 1 <= v <= 31,
+            "week": lambda v: isinstance(v, int) and 1 <= v <= 53,
+            "week_day": lambda v: isinstance(v, int) and 0 <= v <= 6,
+            "quarter": lambda v: isinstance(v, int) and 1 <= v <= 4,
+            "hour": lambda v: isinstance(v, int) and 0 <= v <= 23,
+            "minute": lambda v: isinstance(v, int) and 0 <= v <= 59,
+            "second": lambda v: isinstance(v, int) and 0 <= v <= 59,
+            # JSON операторы
+            "json_has_keys": lambda v: isinstance(v, list),
+            "json_has_any_keys": lambda v: isinstance(v, list),
+            "json_extract": lambda v: isinstance(v, (list, tuple)) and len(v) == 2,
+            # Строковые операторы
+            "regex": lambda v: isinstance(v, str),
+            "iregex": lambda v: isinstance(v, str),
+        }
 
-class FullRepository(
-    BaseCrudMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    AdvancedMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    EnterpriseMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-    EventMixin[ModelType, CreateSchemaType, UpdateSchemaType],
-):
-    """
-    Полнофункциональный репозиторий со всеми возможностями.
+        if operator in validation_rules:
+            return validation_rules[operator](value)
 
-    Включает все функции:
-    - Базовые CRUD операции
-    - Расширенная фильтрация и поиск
-    - Кэширование и bulk операции
-    - Система событий
-
-    Example:
-        ```python
-        cache_manager = CacheManager(redis_client=redis_client)
-
-        class UserRepository(FullRepository[User, CreateUserSchema, UpdateUserSchema]):
-            pass
-
-        user_repo = UserRepository(User, db_session, cache_manager)
-
-        # Все возможности доступны
-        user = await user_repo.create_with_event(user_data)
-        results = await user_repo.fulltext_search(["name"], "john")
-        stats = await user_repo.get_cache_stats()
-        ```
-    """
-
-    def __init__(self, model: type[ModelType], db: AsyncSession, cache_manager: CacheManager | None = None):
-        """
-        Initialize FullRepository.
-
-        :param model: SQLAlchemy model class
-        :param db: async SQLAlchemy session
-        :param cache_manager: Cache manager for caching functionality
-        """
-        BaseCrudMixin.__init__(self, model, db)
-        EnterpriseMixin.__init__(self, model, db, cache_manager)
-
-
-# Обратная совместимость - алиас для старого BaseRepository
-class BaseRepository(FullRepository[ModelType, CreateSchemaType, UpdateSchemaType]):
-    """
-    BaseRepository для обратной совместимости.
-
-    DEPRECATED: Рекомендуется использовать конкретные классы репозиториев:
-    - SimpleRepository - для простых проектов
-    - AdvancedRepository - для продвинутых функций
-    - EnterpriseRepository - для корпоративных приложений
-    - FullRepository - для всех возможностей
-    - EventDrivenRepository - для проектов с событиями
-
-    Этот класс содержит все функции и может быть избыточным для многих проектов.
-    """
-
-    pass
-
-
-# Экспорт для удобства
-__all__ = [
-    "SimpleRepository",
-    "AdvancedRepository",
-    "EventDrivenRepository",
-    "EnterpriseRepository",
-    "FullRepository",
-    "BaseRepository",  # для обратной совместимости
-]
+        return True  # Для остальных операторов валидация пройдена
