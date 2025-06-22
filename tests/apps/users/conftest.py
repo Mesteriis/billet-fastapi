@@ -35,7 +35,7 @@ def app_name():
     return "users"
 
 
-# Import fixtures from the main fixtures module
+# Import fixtures from the current module
 pytest_plugins = [
-    "tests.apps.users.tests.fixtures",
+    "tests.apps.users.fixtures",
 ]

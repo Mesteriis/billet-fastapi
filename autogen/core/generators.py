@@ -320,7 +320,7 @@ class AppGenerator:
 
     def _generate_test_components(self, config: GenerationConfig, overwrite: bool = False) -> Dict[str, Any]:
         """Generate test factories and fixtures."""
-        app_dir = Path(f"src/apps/{config.app_name}")
+        tests_dir = Path(f"tests/apps/{config.app_name}")
         results = {
             "status": "success",
             "app_name": config.app_name,
@@ -331,8 +331,7 @@ class AppGenerator:
 
         try:
             # Ensure tests directory exists
-            tests_dir = app_dir / "tests"
-            tests_dir.mkdir(exist_ok=True)
+            tests_dir.mkdir(parents=True, exist_ok=True)
 
             # Generate factories
             factory_file = tests_dir / "factories.py"
@@ -563,16 +562,16 @@ def app_name():
     return "{app_name}"
 
 
-# Import fixtures from the main fixtures module
+# Import fixtures from the current module
 pytest_plugins = [
-    "tests.apps.{app_name}.tests.fixtures",
+    "tests.apps.{app_name}.fixtures",
 ]
 '''
 
     def _dry_run_test_generation(self, config: GenerationConfig) -> Dict[str, Any]:
         """Show what test components would be generated."""
         app_name = config.app_name
-        tests_dir = f"src/apps/{app_name}/tests"
+        tests_dir = f"tests/apps/{app_name}"
 
         files_to_generate = [
             {

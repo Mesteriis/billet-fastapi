@@ -92,7 +92,7 @@ def coverage(
         # Проверяем существование тестов
         tests_dir = Path(f"tests/apps/{app_name}")
         if not tests_dir.exists():
-            console.print(f"⚠️ Тесты для приложения {app_name} не найдены", style="yellow")
+            console.print(f"⚠️ Тесты для приложения {app_name} не найдены в tests/apps/{app_name}", style="yellow")
             console.print("💡 Используйте 'autogen tests factories' для создания тестовых компонентов", style="blue")
             return
 
